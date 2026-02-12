@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  description String
+  status      String   @default("pending")
+  result      Json?
+  totalCost   Decimal?
+  spendCap    Decimal?
+  events      Json?    @default("[]")
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
+
+  subtasks    Subtask[]
+  payments    Payment[]
+}
+
+model Subtask {
+  id             String   @id @default(cuid())
+  taskId         String
+  capability     String
+  specialistId   String?
+  specialistName String?
+  status         String   @default("pending")
+  cost           Decimal?
+  result         String?
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  task       Task       @relation(fields: [taskId], references: [id])
+  specialist Specialist? @relation(fields: [specialistId], references: [id])
+}
+
+model Specialist {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  description   String
+  endpoint      String
+  walletAddress String
+  capabilities  String[]
+  priceUsdc     Decimal
+  reputation    Int      @default(50)
+  totalJobs     Int      @default(0)
+  status        String   @default("online")
+  createdAt     DateTime @default(now())
+
+  subtasks Subtask[]
+  payments Payment[]
+}
+
+model Payment {
+  id           String   @id @default(cuid())
+  taskId       String
+  specialistId String
+  amount       Decimal
+  currency     String   @default("USDC")
+  txHash       String?
+  blockNumber  Int?
+  fromAddress  String?
+  toAddress    String?
+  status       String   @default("pending")
+  protocol     String   @default("x402")
+  createdAt    DateTime @default(now())
+  confirmedAt  DateTime?
+
+  task       Task       @relation(fields: [taskId], references: [id])
+  specialist Specialist @relation(fields: [specialistId], references: [id])
+}
+
+model Reputation {
+  id           String @id @default(cuid())
+  specialistId String @unique
+  score        Int    @default(50)
+  totalRatings Int    @default(0)
+  updatedAt    DateTime @updatedAt
+}
