@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { motion, AnimatePresence } from "framer-motion";
 import { TaskResult } from "@/types/task";
 
 const EXPLORER_URL =
@@ -74,6 +75,12 @@ const roleConfig: Record<
     },
 };
 
+// Shared message entrance animation
+const msgVariants = {
+    hidden: { opacity: 0, y: 12 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" as const } },
+};
+
 function PrismAvatar({ size = 32 }: { size?: number }) {
     return (
         <div
@@ -101,7 +108,12 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     // --- System messages: centered, muted ---
     if (message.role === "system") {
         return (
-            <div className="chat-msg-enter flex justify-center py-2">
+            <motion.div
+                variants={msgVariants}
+                initial="hidden"
+                animate="visible"
+                className="flex justify-center py-2"
+            >
                 <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-surface-tertiary border border-border">
                     <PrismAvatar size={16} />
                     <span
@@ -113,14 +125,19 @@ export default function ChatMessage({ message }: ChatMessageProps) {
                         {message.content}
                     </span>
                 </div>
-            </div>
+            </motion.div>
         );
     }
 
     // --- User messages: right-aligned ---
     if (message.role === "user") {
         return (
-            <div className="chat-msg-enter flex justify-end py-2 pl-16">
+            <motion.div
+                variants={msgVariants}
+                initial="hidden"
+                animate="visible"
+                className="flex justify-end py-2 pl-16"
+            >
                 <div className={`max-w-[80%] px-4 py-3 ${config.bubbleClass}`}>
                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                     <p className="text-[10px] opacity-60 mt-1.5 text-right">
@@ -130,7 +147,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
                         })}
                     </p>
                 </div>
-            </div>
+            </motion.div>
         );
     }
 
@@ -146,7 +163,12 @@ export default function ChatMessage({ message }: ChatMessageProps) {
 
     // --- Agent messages: left-aligned with avatar ---
     return (
-        <div className="chat-msg-enter flex gap-3 py-2 pr-16">
+        <motion.div
+            variants={msgVariants}
+            initial="hidden"
+            animate="visible"
+            className="flex gap-3 py-2 pr-16"
+        >
             {/* Avatar */}
             <PrismAvatar />
 
@@ -177,7 +199,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
                     })}
                 </p>
             </div>
-        </div>
+        </motion.div>
     );
 }
 
@@ -198,7 +220,12 @@ function ThinkingBlock({ message }: { message: ChatMessageData }) {
     };
 
     return (
-        <div className="chat-msg-enter flex gap-3 py-2">
+        <motion.div
+            variants={msgVariants}
+            initial="hidden"
+            animate="visible"
+            className="flex gap-3 py-2"
+        >
             {/* Avatar */}
             <PrismAvatar />
 
@@ -208,15 +235,17 @@ function ThinkingBlock({ message }: { message: ChatMessageData }) {
                     onClick={() => setIsOpen(!isOpen)}
                     className="flex items-center gap-2 text-xs text-ink-muted hover:text-ink-secondary transition-colors py-1 group"
                 >
-                    <svg
-                        className={`w-3 h-3 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+                    <motion.svg
+                        animate={{ rotate: isOpen ? 90 : 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="w-3 h-3"
                         fill="none"
                         viewBox="0 0 24 24"
                         strokeWidth={2.5}
                         stroke="currentColor"
                     >
                         <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                    </svg>
+                    </motion.svg>
                     {isComplete ? (
                         <span>Processed for {duration.toFixed(1)}s</span>
                     ) : (
@@ -230,19 +259,36 @@ function ThinkingBlock({ message }: { message: ChatMessageData }) {
                     </span>
                 </button>
 
-                {/* Expandable content */}
-                {isOpen && (
-                    <div className="mt-1 ml-1 pl-3 border-l-2 border-border space-y-1.5 thinking-expand">
-                        {steps.map((step, i) => (
-                            <div key={i} className="flex items-start gap-2 py-0.5">
-                                <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${statusDotColor(step.status)}`} />
-                                <span className="text-xs text-ink-secondary">{step.message}</span>
+                {/* Expandable content with AnimatePresence */}
+                <AnimatePresence initial={false}>
+                    {isOpen && (
+                        <motion.div
+                            key="thinking-steps"
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.3, ease: "easeOut" }}
+                            style={{ overflow: "hidden" }}
+                        >
+                            <div className="mt-1 ml-1 pl-3 border-l-2 border-border space-y-1.5">
+                                {steps.map((step, i) => (
+                                    <motion.div
+                                        key={i}
+                                        initial={{ opacity: 0, x: -8 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        transition={{ duration: 0.2, delay: i * 0.04 }}
+                                        className="flex items-start gap-2 py-0.5"
+                                    >
+                                        <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${statusDotColor(step.status)}`} />
+                                        <span className="text-xs text-ink-secondary">{step.message}</span>
+                                    </motion.div>
+                                ))}
                             </div>
-                        ))}
-                    </div>
-                )}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
-        </div>
+        </motion.div>
     );
 }
 
@@ -251,7 +297,12 @@ function ResultCard({ result }: { result: TaskResult }) {
     const [activeTab, setActiveTab] = useState(0);
 
     return (
-        <div className="chat-msg-enter py-3">
+        <motion.div
+            variants={msgVariants}
+            initial="hidden"
+            animate="visible"
+            className="py-3"
+        >
             <div className="flex gap-3">
                 {/* Avatar */}
                 <PrismAvatar />
@@ -294,14 +345,23 @@ function ResultCard({ result }: { result: TaskResult }) {
                                 ))}
                             </div>
 
-                            <div className="p-4">
-                                <p className="text-[10px] text-ink-muted mb-2">
-                                    By {result.deliverables[activeTab].specialistName}
-                                </p>
-                                <div className="text-xs text-ink-secondary whitespace-pre-wrap font-mono leading-relaxed bg-surface-secondary p-3 rounded-lg border border-border max-h-60 overflow-y-auto chat-scrollbar">
-                                    {result.deliverables[activeTab].content}
-                                </div>
-                            </div>
+                            <AnimatePresence mode="wait">
+                                <motion.div
+                                    key={activeTab}
+                                    initial={{ opacity: 0, y: 4 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -4 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="p-4"
+                                >
+                                    <p className="text-[10px] text-ink-muted mb-2">
+                                        By {result.deliverables[activeTab].specialistName}
+                                    </p>
+                                    <div className="text-xs text-ink-secondary whitespace-pre-wrap font-mono leading-relaxed bg-surface-secondary p-3 rounded-lg border border-border max-h-60 overflow-y-auto chat-scrollbar">
+                                        {result.deliverables[activeTab].content}
+                                    </div>
+                                </motion.div>
+                            </AnimatePresence>
                         </>
                     )}
 
@@ -312,8 +372,11 @@ function ResultCard({ result }: { result: TaskResult }) {
                         </p>
                         <div className="space-y-2">
                             {result.paymentBreakdown.map((p, i) => (
-                                <div
+                                <motion.div
                                     key={i}
+                                    initial={{ opacity: 0, y: 6 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.25, delay: i * 0.08 }}
                                     className="bg-surface-secondary rounded-lg border border-border p-3 text-xs"
                                 >
                                     <div className="flex items-center justify-between mb-1.5">
@@ -354,7 +417,7 @@ function ResultCard({ result }: { result: TaskResult }) {
                                             <span className="text-success">$0.00 (gasless)</span>
                                         </div>
                                     </div>
-                                </div>
+                                </motion.div>
                             ))}
                         </div>
 
@@ -367,6 +430,6 @@ function ResultCard({ result }: { result: TaskResult }) {
                     </div>
                 </div>
             </div>
-        </div>
+        </motion.div>
     );
 }
