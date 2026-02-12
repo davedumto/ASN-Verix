@@ -141,7 +141,7 @@ export default function LandingPage() {
                   </span>
                 </Link>
                 <a
-                  href="https://github.com"
+                  href="https://github.com/davedumto/agent-specialization-network"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-7 py-3.5 text-sm font-medium text-surface/60 border border-surface/10 rounded-xl hover:border-surface/25 hover:text-surface/80 transition-colors"
