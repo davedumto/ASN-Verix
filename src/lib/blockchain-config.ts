@@ -60,9 +60,6 @@ export function getProvider(rpcUrl?: string): ethers.JsonRpcProvider {
         batchMaxCount: 1, // disable batching — testnet RPCs handle single requests better
     });
 
-    // Override fee data so every tx uses zero gas price (SKALE is gasless).
-    provider.getFeeData = async () => new ethers.FeeData(BigInt(0), BigInt(0), BigInt(0));
-
     return provider;
 }
 
