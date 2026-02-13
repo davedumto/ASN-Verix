@@ -4,7 +4,7 @@ import { getCoordinatorWallet } from "@/lib/wallet";
 import { getUSDCContract, parseUSDC, formatUSDC } from "@/lib/blockchain-config";
 
 /** Retry an async fn up to `attempts` times with exponential backoff */
-async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 2000): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, attempts = 4, delayMs = 500): Promise<T> {
   for (let i = 0; i < attempts; i++) {
     try {
       return await fn();
@@ -13,7 +13,7 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 2000):
         err instanceof Error &&
         (err.message.includes("TIMEOUT") || err.message.includes("timeout"));
       if (!isTimeout || i === attempts - 1) throw err;
-      console.log(`[Payment] RPC timeout, retrying (${i + 1}/${attempts}) in ${delayMs}ms...`);
+      console.log(`[Payment] RPC timeout, retrying (${i + 1}/${attempts}) in ${delayMs * (i + 1)}ms...`);
       await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
     }
   }
@@ -89,7 +89,7 @@ export async function createPayment(
     console.log(`[Payment] Waiting for confirmation...`);
 
     // Wait for transaction confirmation (with retry)
-    const receipt = (await withRetry(() => tx.wait(), 3, 3000)) as ethers.TransactionReceipt;
+    const receipt = (await withRetry(() => tx.wait())) as ethers.TransactionReceipt;
 
     if (!receipt || receipt.status === 0) {
       throw new Error("Transaction failed on-chain");

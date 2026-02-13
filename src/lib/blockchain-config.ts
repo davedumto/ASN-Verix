@@ -46,7 +46,7 @@ export const USDC_CONFIG = {
 export function getProvider(): ethers.JsonRpcProvider {
     const network = new ethers.Network(SKALE_CONFIG.chainName, SKALE_CONFIG.chainId);
     const fetchReq = new ethers.FetchRequest(SKALE_CONFIG.rpcUrl);
-    fetchReq.timeout = 30000; // 30s per request (default is too short for testnet)
+    fetchReq.timeout = 8000; // 8s per request — short enough for retries to fit within Vercel's function limit
     const provider = new ethers.JsonRpcProvider(fetchReq, network, {
         staticNetwork: network,
         batchMaxCount: 1, // disable batching — testnet RPCs handle single requests better
