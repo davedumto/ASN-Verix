@@ -65,8 +65,10 @@ export async function createPayment(
       }
 
       // Execute USDC transfer on SKALE
-      console.log(`[Payment] Sending ${amount} USDC...`);
-      const tx = await usdcContract.transfer(specialistAddress, amountWei);
+      // Fetch the correct nonce from the chain to avoid stale nonce errors
+      const nonce = await provider.getTransactionCount(wallet.address, "latest");
+      console.log(`[Payment] Sending ${amount} USDC (nonce: ${nonce})...`);
+      const tx = await usdcContract.transfer(specialistAddress, amountWei, { nonce });
 
       console.log(`[Payment] Transaction submitted: ${tx.hash}`);
       console.log(`[Payment] Waiting for confirmation...`);

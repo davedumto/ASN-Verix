@@ -65,21 +65,33 @@ export function getProvider(rpcUrl?: string): ethers.JsonRpcProvider {
 
 /**
  * Try an async operation with RPC failover.
- * Tries the primary RPC, then falls back to alternatives on timeout/error.
+ * Only retries on TIMEOUT / SERVER_ERROR / NETWORK_ERROR.
+ * On-chain errors (nonce, revert, insufficient funds) are thrown immediately.
  */
 export async function withRpcFailover<T>(fn: (provider: ethers.JsonRpcProvider) => Promise<T>): Promise<T> {
+    const retryableCodes = new Set(["TIMEOUT", "SERVER_ERROR", "NETWORK_ERROR"]);
     let lastError: unknown;
-    for (const rpcUrl of RPC_ENDPOINTS) {
+
+    for (let i = 0; i < RPC_ENDPOINTS.length; i++) {
+        const rpcUrl = RPC_ENDPOINTS[i];
         try {
             const provider = getProvider(rpcUrl);
             return await fn(provider);
         } catch (error: unknown) {
             const code = (error as { code?: string })?.code;
-            console.warn(`[RPC] ${rpcUrl} failed (${code}), trying next...`);
             lastError = error;
-            // Only failover on network/timeout errors, not on-chain errors
-            if (code !== "TIMEOUT" && code !== "SERVER_ERROR" && code !== "NETWORK_ERROR") {
-                throw error; // contract revert, insufficient funds, etc. — don't retry
+
+            if (!retryableCodes.has(code || "")) {
+                // On-chain / contract error — don't retry on different RPC
+                console.error(`[RPC] ${rpcUrl} failed with non-retryable error (${code})`);
+                throw error;
+            }
+
+            // Retryable network error — try next RPC
+            if (i < RPC_ENDPOINTS.length - 1) {
+                console.warn(`[RPC] ${rpcUrl} failed (${code}), trying next...`);
+            } else {
+                console.error(`[RPC] All ${RPC_ENDPOINTS.length} RPCs failed. Last error: ${code}`);
             }
         }
     }
