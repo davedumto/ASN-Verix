@@ -47,10 +47,16 @@ export function getProvider(): ethers.JsonRpcProvider {
     const network = new ethers.Network(SKALE_CONFIG.chainName, SKALE_CONFIG.chainId);
     const fetchReq = new ethers.FetchRequest(SKALE_CONFIG.rpcUrl);
     fetchReq.timeout = 30000; // 30s per request (default is too short for testnet)
-    return new ethers.JsonRpcProvider(fetchReq, network, {
+    const provider = new ethers.JsonRpcProvider(fetchReq, network, {
         staticNetwork: network,
         batchMaxCount: 1, // disable batching — testnet RPCs handle single requests better
     });
+
+    // Override fee data so every tx uses zero gas price (SKALE is gasless).
+    // Without this, ethers auto-detects ~1 gwei which drains sFUEL.
+    provider.getFeeData = async () => new ethers.FeeData(BigInt(0), BigInt(0), BigInt(0));
+
+    return provider;
 }
 
 /**
