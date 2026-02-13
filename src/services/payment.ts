@@ -3,6 +3,23 @@ import { ethers } from "ethers";
 import { getCoordinatorWallet } from "@/lib/wallet";
 import { getUSDCContract, parseUSDC, formatUSDC } from "@/lib/blockchain-config";
 
+/** Retry an async fn up to `attempts` times with exponential backoff */
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 2000): Promise<T> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      const isTimeout =
+        err instanceof Error &&
+        (err.message.includes("TIMEOUT") || err.message.includes("timeout"));
+      if (!isTimeout || i === attempts - 1) throw err;
+      console.log(`[Payment] RPC timeout, retrying (${i + 1}/${attempts}) in ${delayMs}ms...`);
+      await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+    }
+  }
+  throw new Error("withRetry: unreachable");
+}
+
 /**
  * Map specialist name to their wallet address by deriving it from the private key in env vars.
  */
@@ -51,8 +68,8 @@ export async function createPayment(
     console.log(`[Payment] From: ${wallet.address}`);
     console.log(`[Payment] To: ${specialistAddress}`);
 
-    // Check coordinator balance
-    const balance = await usdcContract.balanceOf(wallet.address);
+    // Check coordinator balance (with retry for flaky RPC)
+    const balance = await withRetry(() => usdcContract.balanceOf(wallet.address));
     const balanceFormatted = formatUSDC(balance);
     console.log(`[Payment] Coordinator USDC balance: $${balanceFormatted}`);
 
@@ -64,17 +81,17 @@ export async function createPayment(
       );
     }
 
-    // Execute USDC transfer on SKALE
+    // Execute USDC transfer on SKALE (with retry for flaky RPC)
     console.log(`[Payment] Sending ${amount} USDC...`);
-    const tx = await usdcContract.transfer(specialistAddress, amountWei);
+    const tx = await withRetry(() => usdcContract.transfer(specialistAddress, amountWei));
 
     console.log(`[Payment] Transaction submitted: ${tx.hash}`);
     console.log(`[Payment] Waiting for confirmation...`);
 
-    // Wait for transaction confirmation
-    const receipt = await tx.wait();
+    // Wait for transaction confirmation (with retry)
+    const receipt = (await withRetry(() => tx.wait(), 3, 3000)) as ethers.TransactionReceipt;
 
-    if (receipt.status === 0) {
+    if (!receipt || receipt.status === 0) {
       throw new Error("Transaction failed on-chain");
     }
 

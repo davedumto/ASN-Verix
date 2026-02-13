@@ -41,10 +41,16 @@ export const USDC_CONFIG = {
  * Get configured JSON-RPC provider for SKALE
  * Uses staticNetwork to skip ethers' network auto-detection,
  * which can fail silently on some SKALE RPC endpoints.
+ * Uses FetchRequest with extended timeout for production reliability.
  */
 export function getProvider(): ethers.JsonRpcProvider {
     const network = new ethers.Network(SKALE_CONFIG.chainName, SKALE_CONFIG.chainId);
-    return new ethers.JsonRpcProvider(SKALE_CONFIG.rpcUrl, network, { staticNetwork: network });
+    const fetchReq = new ethers.FetchRequest(SKALE_CONFIG.rpcUrl);
+    fetchReq.timeout = 30000; // 30s per request (default is too short for testnet)
+    return new ethers.JsonRpcProvider(fetchReq, network, {
+        staticNetwork: network,
+        batchMaxCount: 1, // disable batching — testnet RPCs handle single requests better
+    });
 }
 
 /**
