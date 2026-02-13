@@ -38,26 +38,39 @@ export const USDC_CONFIG = {
 };
 
 /**
- * RPC endpoints — primary + fallback.
- * If the env var is set we use that first, otherwise SKALE native first, Thirdweb second.
+ * RPC endpoints — ordered by priority.
+ * Thirdweb with secret key (authenticated, no rate limits) → SKALE native → Thirdweb public.
  */
-const RPC_ENDPOINTS = process.env.SKALE_RPC_URL
-    ? [process.env.SKALE_RPC_URL, "https://testnet.skalenodes.com/v1/giant-half-dual-testnet", "https://974399131.rpc.thirdweb.com"]
-    : ["https://testnet.skalenodes.com/v1/giant-half-dual-testnet", "https://974399131.rpc.thirdweb.com"];
+const THIRDWEB_RPC = "https://974399131.rpc.thirdweb.com";
+
+function getRpcEndpoints(): string[] {
+    if (process.env.SKALE_RPC_URL) {
+        return [process.env.SKALE_RPC_URL, "https://testnet.skalenodes.com/v1/giant-half-dual-testnet", THIRDWEB_RPC];
+    }
+    // Prefer Thirdweb authenticated if secret key is available
+    return [THIRDWEB_RPC, "https://testnet.skalenodes.com/v1/giant-half-dual-testnet"];
+}
 
 /**
  * Get configured JSON-RPC provider for SKALE
- * Uses staticNetwork to skip ethers' network auto-detection,
- * which can fail silently on some SKALE RPC endpoints.
+ * Uses staticNetwork to skip ethers' network auto-detection.
+ * Attaches Thirdweb secret key header when available for authenticated access.
  */
 export function getProvider(rpcUrl?: string): ethers.JsonRpcProvider {
     const url = rpcUrl || SKALE_CONFIG.rpcUrl;
     const network = new ethers.Network(SKALE_CONFIG.chainName, SKALE_CONFIG.chainId);
     const fetchReq = new ethers.FetchRequest(url);
-    fetchReq.timeout = 30_000; // 30s — production RPCs can be slow
+    fetchReq.timeout = 30_000;
+
+    // Attach Thirdweb secret key header for authenticated (no rate-limit) access
+    const secretKey = process.env.THIRDWEB_SECRET_KEY;
+    if (secretKey && url.includes("thirdweb.com")) {
+        fetchReq.setHeader("x-secret-key", secretKey);
+    }
+
     const provider = new ethers.JsonRpcProvider(fetchReq, network, {
         staticNetwork: network,
-        batchMaxCount: 1, // disable batching — testnet RPCs handle single requests better
+        batchMaxCount: 1,
     });
 
     return provider;
@@ -70,10 +83,11 @@ export function getProvider(rpcUrl?: string): ethers.JsonRpcProvider {
  */
 export async function withRpcFailover<T>(fn: (provider: ethers.JsonRpcProvider) => Promise<T>): Promise<T> {
     const retryableCodes = new Set(["TIMEOUT", "SERVER_ERROR", "NETWORK_ERROR"]);
+    const endpoints = getRpcEndpoints();
     let lastError: unknown;
 
-    for (let i = 0; i < RPC_ENDPOINTS.length; i++) {
-        const rpcUrl = RPC_ENDPOINTS[i];
+    for (let i = 0; i < endpoints.length; i++) {
+        const rpcUrl = endpoints[i];
         try {
             const provider = getProvider(rpcUrl);
             return await fn(provider);
@@ -88,10 +102,10 @@ export async function withRpcFailover<T>(fn: (provider: ethers.JsonRpcProvider) 
             }
 
             // Retryable network error — try next RPC
-            if (i < RPC_ENDPOINTS.length - 1) {
+            if (i < endpoints.length - 1) {
                 console.warn(`[RPC] ${rpcUrl} failed (${code}), trying next...`);
             } else {
-                console.error(`[RPC] All ${RPC_ENDPOINTS.length} RPCs failed. Last error: ${code}`);
+                console.error(`[RPC] All ${endpoints.length} RPCs failed. Last error: ${code}`);
             }
         }
     }
