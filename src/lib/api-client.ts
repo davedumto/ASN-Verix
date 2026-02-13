@@ -37,10 +37,35 @@ export async function getSpecialists(): Promise<Specialist[]> {
   return request("/api/specialists");
 }
 
+export async function registerSpecialist(data: {
+  name: string;
+  description: string;
+  capabilities: string;
+  priceUsdc: number;
+  walletAddress: string;
+  aiModel: "claude" | "openai";
+  apiKey?: string;
+}): Promise<Specialist> {
+  return request("/api/specialists", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteSpecialist(id: string): Promise<void> {
+  return request(`/api/specialists?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function getWalletBalance(): Promise<WalletBalance> {
   return request("/api/wallet/balance");
 }
 
 export async function getTaskHistory(): Promise<Task[]> {
   return request("/api/tasks");
+}
+
+export async function deleteTask(id: string): Promise<void> {
+  return request(`/api/tasks?id=${encodeURIComponent(id)}`, { method: "DELETE" });
 }

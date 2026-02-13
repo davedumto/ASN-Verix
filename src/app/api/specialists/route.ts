@@ -1,47 +1,95 @@
-import { NextResponse } from "next/server";
-import { Specialist } from "@/types/specialist";
-
-// Hardcoded specialists for MVP — will be replaced with Prisma/discovery
-const specialists: Specialist[] = [
-  {
-    id: "specialist_code_auditor",
-    name: "CodeAuditor",
-    description: "Security vulnerability detection and best practices review",
-    endpoint: "/api/specialists/code-auditor/execute",
-    walletAddress: "0x0000000000000000000000000000000000000001",
-    capabilities: ["security-analysis", "code-review"],
-    priceUsdc: 1.0,
-    reputation: 95,
-    totalJobs: 142,
-    status: "online",
-  },
-  {
-    id: "specialist_market_analyst",
-    name: "MarketAnalyst",
-    description:
-      "Financial analysis, market research, competitive intelligence",
-    endpoint: "/api/specialists/market-analyst/execute",
-    walletAddress: "0x0000000000000000000000000000000000000002",
-    capabilities: ["market-research"],
-    priceUsdc: 0.75,
-    reputation: 88,
-    totalJobs: 98,
-    status: "online",
-  },
-  {
-    id: "specialist_creative_writer",
-    name: "CreativeWriter",
-    description: "Polished business writing, reports, investment memos",
-    endpoint: "/api/specialists/creative-writer/execute",
-    walletAddress: "0x0000000000000000000000000000000000000003",
-    capabilities: ["creative-writing"],
-    priceUsdc: 0.5,
-    reputation: 92,
-    totalJobs: 215,
-    status: "online",
-  },
-];
+import { NextRequest, NextResponse } from "next/server";
+import {
+  getAllSpecialists,
+  registerSpecialist,
+  removeSpecialist,
+} from "@/services/discovery";
+import { encrypt, maskApiKey } from "@/lib/encryption";
 
 export async function GET() {
-  return NextResponse.json(specialists);
+  const specialists = getAllSpecialists();
+
+  // Strip encrypted API keys — only send masked version to client
+  const safe = specialists.map((s) => ({
+    ...s,
+    apiKey: undefined,
+    apiKeyMasked: s.apiKeyMasked || undefined,
+  }));
+
+  return NextResponse.json(safe);
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { name, description, capabilities, priceUsdc, walletAddress, aiModel, apiKey } = body;
+
+    if (!name || !description) {
+      return NextResponse.json(
+        { error: "Name and description are required" },
+        { status: 400 }
+      );
+    }
+
+    const specialist = {
+      id: `specialist_${name.toLowerCase().replace(/\s+/g, "_")}_${Date.now()}`,
+      name,
+      description,
+      endpoint: `/api/specialists/${name.toLowerCase().replace(/\s+/g, "-")}/execute`,
+      walletAddress: walletAddress || "0x0000000000000000000000000000000000000000",
+      capabilities: Array.isArray(capabilities)
+        ? capabilities
+        : (capabilities || "").split(",").map((c: string) => c.trim()).filter(Boolean),
+      priceUsdc: parseFloat(priceUsdc) || 0.5,
+      reputation: 50,
+      totalJobs: 0,
+      status: "online" as const,
+      aiModel: aiModel === "claude" ? ("claude" as const) : ("openai" as const),
+      apiKey: apiKey ? encrypt(apiKey) : undefined,
+      apiKeyMasked: apiKey ? maskApiKey(apiKey) : undefined,
+    };
+
+    registerSpecialist(specialist);
+    console.log(`[API] Registered specialist: ${specialist.name} (API key: ${apiKey ? "provided" : "none"})`);
+
+    // Return without the encrypted key
+    return NextResponse.json(
+      {
+        ...specialist,
+        apiKey: undefined,
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("[API] Error registering specialist:", error);
+    return NextResponse.json(
+      { error: "Failed to register specialist" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "ID is required" }, { status: 400 });
+    }
+
+    const removed = removeSpecialist(id);
+    if (!removed) {
+      return NextResponse.json({ error: "Specialist not found" }, { status: 404 });
+    }
+
+    console.log(`[API] Removed specialist: ${id}`);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("[API] Error removing specialist:", error);
+    return NextResponse.json(
+      { error: "Failed to remove specialist" },
+      { status: 500 }
+    );
+  }
 }

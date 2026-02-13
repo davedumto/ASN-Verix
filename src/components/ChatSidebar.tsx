@@ -1,19 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Task } from "@/types/task";
+import { Specialist } from "@/types/specialist";
 
 interface ChatSidebarProps {
     taskHistory: Task[];
     activeTaskId: string | null;
     onNewTask: () => void;
     onSelectTask: (taskId: string) => void;
+    onDeleteTask: (taskId: string) => void;
     walletBalance: number;
     walletAddress: string;
     networkStatus: "connected" | "disconnected" | "loading";
     isOpen: boolean;
     onToggle: () => void;
+    specialists: Specialist[];
     collapsed: boolean;
     onCollapseToggle: () => void;
 }
@@ -26,14 +31,17 @@ export default function ChatSidebar({
     activeTaskId,
     onNewTask,
     onSelectTask,
+    onDeleteTask,
     walletBalance,
     walletAddress,
     networkStatus,
     isOpen,
     onToggle,
+    specialists,
     collapsed,
     onCollapseToggle,
 }: ChatSidebarProps) {
+    const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; description: string } | null>(null);
     const shortAddress =
         walletAddress && walletAddress.length > 10
             ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
@@ -168,29 +176,43 @@ export default function ChatSidebar({
                                             History
                                         </p>
                                         {taskHistory.map((task) => (
-                                            <motion.button
-                                                key={task.id}
-                                                whileHover={{ x: 2 }}
-                                                transition={{ duration: 0.15 }}
-                                                onClick={() => onSelectTask(task.id)}
-                                                className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all group ${activeTaskId === task.id
-                                                    ? "bg-white/15 text-white"
-                                                    : "text-white/60 hover:text-white/90 hover:bg-white/8"
-                                                    }`}
-                                            >
-                                                <p className="truncate text-[13px] leading-snug">
-                                                    {task.description}
-                                                </p>
-                                                <div className="flex items-center gap-2 mt-1">
-                                                    <span className={`w-1.5 h-1.5 rounded-full ${task.status === "completed" ? "bg-emerald-400" : "bg-red-400"}`} />
-                                                    <span className="text-[10px] text-white/30">
-                                                        {new Date(task.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}
-                                                    </span>
-                                                    {task.totalCost !== undefined && (
-                                                        <span className="text-[10px] font-mono text-white/30">${task.totalCost.toFixed(2)}</span>
-                                                    )}
-                                                </div>
-                                            </motion.button>
+                                            <div key={task.id} className="relative group">
+                                                <motion.button
+                                                    whileHover={{ x: 2 }}
+                                                    transition={{ duration: 0.15 }}
+                                                    onClick={() => onSelectTask(task.id)}
+                                                    className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all ${activeTaskId === task.id
+                                                        ? "bg-white/15 text-white"
+                                                        : "text-white/60 hover:text-white/90 hover:bg-white/8"
+                                                        }`}
+                                                >
+                                                    <p className="truncate text-[13px] leading-snug pr-6">
+                                                        {task.description}
+                                                    </p>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className={`w-1.5 h-1.5 rounded-full ${task.status === "completed" ? "bg-emerald-400" : "bg-red-400"}`} />
+                                                        <span className="text-[10px] text-white/30">
+                                                            {new Date(task.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}
+                                                        </span>
+                                                        {task.totalCost !== undefined && (
+                                                            <span className="text-[10px] font-mono text-white/30">${task.totalCost.toFixed(2)}</span>
+                                                        )}
+                                                    </div>
+                                                </motion.button>
+                                                {/* Delete button — appears on hover */}
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setDeleteConfirm({ id: task.id, description: task.description });
+                                                    }}
+                                                    className="absolute right-2 top-2.5 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md text-white/20 hover:text-red-400 hover:bg-red-500/10"
+                                                    title="Delete chat"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                    </svg>
+                                                </button>
+                                            </div>
                                         ))}
                                     </>
                                 )}
@@ -198,18 +220,16 @@ export default function ChatSidebar({
 
                             {/* Specialists */}
                             <div className="border-t border-white/10 px-3 py-3">
-                                <p className="text-[10px] text-white/30 uppercase tracking-wider px-1 mb-2">Specialists</p>
+                                <div className="flex items-center justify-between px-1 mb-2">
+                                    <p className="text-[10px] text-white/30 uppercase tracking-wider">Specialists ({specialists.length})</p>
+                                    <Link href="/settings" className="text-[10px] text-white/30 hover:text-white/60 transition-colors">Manage</Link>
+                                </div>
                                 <div className="space-y-1">
-                                    {[
-                                        { name: "CodeAuditor", cap: "Security", price: "$1.00", emoji: "🛡️" },
-                                        { name: "MarketAnalyst", cap: "Research", price: "$0.75", emoji: "📊" },
-                                        { name: "CreativeWriter", cap: "Writing", price: "$0.50", emoji: "✍️" },
-                                    ].map((s) => (
-                                        <div key={s.name} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-white/50 text-xs">
-                                            <span className="text-sm">{s.emoji}</span>
+                                    {specialists.map((s) => (
+                                        <div key={s.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-white/50 text-xs">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
                                             <span className="flex-1 truncate">{s.name}</span>
-                                            <span className="font-mono text-white/25 text-[10px]">{s.price}</span>
-                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                            <span className="font-mono text-white/25 text-[10px]">${s.priceUsdc.toFixed(2)}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -354,6 +374,67 @@ export default function ChatSidebar({
                     </div>
                 </div>
             </aside>
+
+            {/* Delete Confirmation Dialog */}
+            <AnimatePresence>
+                {deleteConfirm && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+                        onClick={() => setDeleteConfirm(null)}
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 8 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 8 }}
+                            transition={{ duration: 0.15 }}
+                            className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center shrink-0">
+                                    <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-semibold text-white">Delete Chat</h3>
+                                    <p className="text-xs text-white/40 mt-0.5">This action cannot be undone</p>
+                                </div>
+                            </div>
+
+                            <p className="text-sm text-white/60 mb-5 leading-relaxed">
+                                Are you sure you want to delete{" "}
+                                <span className="text-white/80 font-medium">
+                                    &ldquo;{deleteConfirm.description.length > 60
+                                        ? deleteConfirm.description.slice(0, 60) + "..."
+                                        : deleteConfirm.description}&rdquo;
+                                </span>?
+                            </p>
+
+                            <div className="flex gap-2.5 justify-end">
+                                <button
+                                    onClick={() => setDeleteConfirm(null)}
+                                    className="px-4 py-2 rounded-xl text-sm text-white/50 hover:text-white/80 hover:bg-white/5 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        onDeleteTask(deleteConfirm.id);
+                                        setDeleteConfirm(null);
+                                    }}
+                                    className="px-4 py-2 rounded-xl text-sm font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition-colors"
+                                >
+                                    Delete
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </>
     );
 }

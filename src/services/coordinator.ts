@@ -5,6 +5,12 @@ import { Specialist } from "@/types/specialist";
 import { taskStore } from "@/lib/task-store";
 import { createPayment } from "@/services/payment";
 import { Payment } from "@/types/payment";
+import {
+  getSpecialistSummariesForRouting,
+  getSpecialistByName,
+  getAllSpecialists,
+} from "@/services/discovery";
+import { decrypt } from "@/lib/encryption";
 
 const EXPLORER_URL = "https://staging-utter-unripe-menkar.explorer.staging-v3.skalenodes.com";
 
@@ -45,20 +51,20 @@ export async function executeCoordinator(
 ): Promise<void> {
   console.log(`[Coordinator] Starting task ${taskId}: ${description}`);
 
-  await pushEvent(taskId, "coordinator", "Coordinator received task. Beginning decomposition...", "info");
+  await pushEvent(taskId, "coordinator", "Coordinator received task. Analyzing with AI...", "info");
 
-  // Phase 1: Decompose task into subtasks
-  const subtasks = decomposeTask(description);
+  // Phase 1: AI-powered task decomposition
+  const subtasks = await decomposeTaskWithAI(description);
 
   await taskStore.update(taskId, {
     status: "discovering",
     subtasks,
   });
 
-  await pushEvent(taskId, "coordinator", `Task decomposed into ${subtasks.length} subtask(s).`, "success");
+  await pushEvent(taskId, "coordinator", `AI selected ${subtasks.length} specialist(s) for this task.`, "success");
 
   for (const s of subtasks) {
-    await pushEvent(taskId, "coordinator", `Specialist identified: ${s.specialistName} ($${s.cost?.toFixed(2)} USDC)`, "info");
+    await pushEvent(taskId, "coordinator", `Specialist assigned: ${s.specialistName} ($${s.cost?.toFixed(2)} USDC)`, "info");
   }
 
   // Spend cap enforcement
@@ -74,7 +80,7 @@ export async function executeCoordinator(
 
   await pushEvent(taskId, "system", `Spend cap check passed: $${estimatedTotal.toFixed(2)} within $${effectiveCap.toFixed(2)} limit.`, "success");
 
-  console.log(`[Coordinator] Decomposed into ${subtasks.length} subtask(s)`);
+  console.log(`[Coordinator] AI routed to ${subtasks.length} subtask(s)`);
 
   // Phase 2: Execute each subtask with real AI
   await taskStore.update(taskId, {
@@ -187,155 +193,223 @@ export async function executeCoordinator(
   console.log(`[Coordinator] Task ${taskId} completed. Total spent: $${totalSpent.toFixed(2)} USDC`);
 }
 
-export function decomposeTask(description: string): Subtask[] {
+// ─────────────────────────────────────────────────────────────────────────────
+// AI-POWERED TASK DECOMPOSITION
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Uses an LLM to analyze the user's prompt and decide which specialists to use.
+ * Falls back to keyword matching if the LLM call fails.
+ */
+async function decomposeTaskWithAI(description: string): Promise<Subtask[]> {
+  const specialists = getSpecialistSummariesForRouting();
+
+  if (specialists.length === 0) {
+    console.warn("[Coordinator] No specialists registered, returning empty");
+    return [];
+  }
+
+  const routingPrompt = `You are a task routing coordinator for an AI agent network.
+
+Given a user's task and a list of available specialist agents, decide which specialist(s) should handle the task.
+
+## Available Specialists:
+${specialists.map((s) => `- **${s.name}** ($${s.priceUsdc} USDC): ${s.description}. Capabilities: ${s.capabilities.join(", ")}`).join("\n")}
+
+## User's Task:
+"${description}"
+
+## Instructions:
+1. Analyze what the user is asking for
+2. Select the specialist(s) best suited to handle this task — you may select 1 or more
+3. Return ONLY a JSON array with your selections. No other text.
+
+Example response format:
+[{"specialistName": "CodeAuditor", "reason": "Task requires security analysis"}]
+
+Return ONLY the JSON array:`;
+
+  try {
+    console.log("[Coordinator] Using AI to route task...");
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 500,
+      temperature: 0.1,
+      messages: [{ role: "user", content: routingPrompt }],
+    });
+
+    const content = completion.choices[0]?.message?.content?.trim();
+    if (!content) throw new Error("Empty AI response");
+
+    // Parse the JSON response — handle markdown code block wrapping
+    let jsonStr = content;
+    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      jsonStr = jsonMatch[1].trim();
+    }
+
+    const selections: { specialistName: string; reason: string }[] = JSON.parse(jsonStr);
+
+    if (!Array.isArray(selections) || selections.length === 0) {
+      throw new Error("AI returned empty selections");
+    }
+
+    console.log(`[Coordinator] AI selected: ${selections.map((s) => s.specialistName).join(", ")}`);
+
+    // Map selections to subtasks (only include specialists that actually exist)
+    const subtasks: Subtask[] = [];
+    for (const sel of selections) {
+      const specialist = getSpecialistByName(sel.specialistName);
+      if (specialist) {
+        subtasks.push({
+          id: crypto.randomUUID(),
+          capability: specialist.capabilities[0] || "general",
+          specialistName: specialist.name,
+          status: "pending",
+          cost: specialist.priceUsdc,
+        });
+      } else {
+        console.warn(`[Coordinator] AI suggested unknown specialist: ${sel.specialistName}, skipping`);
+      }
+    }
+
+    if (subtasks.length > 0) return subtasks;
+
+    // If none of the AI selections matched, fall back
+    throw new Error("No valid specialists matched AI selections");
+  } catch (error) {
+    console.warn("[Coordinator] AI routing failed, falling back to keyword matching:", error);
+    return decomposeTaskFallback(description);
+  }
+}
+
+/**
+ * Fallback: keyword-based decomposition (original logic)
+ */
+function decomposeTaskFallback(description: string): Subtask[] {
   const lower = description.toLowerCase();
   const subtasks: Subtask[] = [];
+  const allSpecialists = getAllSpecialists();
 
-  if (
-    lower.includes("code") ||
-    lower.includes("security") ||
-    lower.includes("audit")
-  ) {
-    subtasks.push({
-      id: crypto.randomUUID(),
-      capability: "security-analysis",
-      specialistName: "CodeAuditor",
-      status: "pending",
-      cost: 1.0,
-    });
+  // Check each specialist's capabilities against keywords in the description
+  for (const specialist of allSpecialists) {
+    const keywords = [
+      specialist.name.toLowerCase(),
+      ...specialist.capabilities.map((c) => c.toLowerCase().replace(/-/g, " ")),
+      ...specialist.description.toLowerCase().split(/[,.]/).map((s) => s.trim()).filter(Boolean),
+    ];
+
+    const matched = keywords.some((kw) => kw.length > 3 && lower.includes(kw));
+    if (matched) {
+      subtasks.push({
+        id: crypto.randomUUID(),
+        capability: specialist.capabilities[0] || "general",
+        specialistName: specialist.name,
+        status: "pending",
+        cost: specialist.priceUsdc,
+      });
+    }
   }
 
-  if (
-    lower.includes("market") ||
-    lower.includes("investment") ||
-    lower.includes("analysis")
-  ) {
+  // If nothing matched, use the first available specialist as a catch-all
+  if (subtasks.length === 0 && allSpecialists.length > 0) {
+    const fallback = allSpecialists[0];
     subtasks.push({
       id: crypto.randomUUID(),
-      capability: "market-research",
-      specialistName: "MarketAnalyst",
+      capability: fallback.capabilities[0] || "general",
+      specialistName: fallback.name,
       status: "pending",
-      cost: 0.75,
-    });
-  }
-
-  if (
-    lower.includes("memo") ||
-    lower.includes("report") ||
-    lower.includes("write")
-  ) {
-    subtasks.push({
-      id: crypto.randomUUID(),
-      capability: "creative-writing",
-      specialistName: "CreativeWriter",
-      status: "pending",
-      cost: 0.5,
+      cost: fallback.priceUsdc,
     });
   }
 
   return subtasks;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DYNAMIC SPECIALIST EXECUTION
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Execute a specialist using the appropriate AI model
- * - CodeAuditor uses Claude (superior code analysis)
- * - Others use OpenAI (better writing/general analysis)
+ * Execute a specialist using the appropriate AI model.
+ * Dynamically builds the prompt from the specialist's description.
+ * Uses the specialist's aiModel preference (claude or openai).
  */
 async function executeSpecialist(
   subtask: Subtask,
   originalTask: string
 ): Promise<string> {
-  const prompts: Record<string, string> = {
-    CodeAuditor: `You are CodeAuditor, an expert security analyst specializing in code security and vulnerability detection.
+  const specialist = getSpecialistByName(subtask.specialistName!);
 
-Your task is to analyze the following request and provide a comprehensive security analysis:
+  // Build a dynamic prompt based on the specialist's description and capabilities
+  const prompt = `You are ${subtask.specialistName}, a specialist AI agent.
+
+Your expertise: ${specialist?.description || "General analysis and problem solving"}
+Your capabilities: ${specialist?.capabilities.join(", ") || "general"}
+
+A user has submitted the following task to the agent network, and the coordinator has assigned it to you:
 
 "${originalTask}"
 
-Provide a professional security analysis report with:
+Provide a comprehensive, professional response that demonstrates your expertise. Structure your response with:
 1. Executive summary
-2. Key findings (categorized by severity: High/Medium/Low)
+2. Key findings or analysis
 3. Specific recommendations
-4. Security best practices
+4. Conclusion
 
-Format your response in markdown. Be thorough but concise.`,
+Format your response in markdown. Be thorough but concise.`;
 
-    MarketAnalyst: `You are MarketAnalyst, an expert financial and market research analyst.
+  const preferClaude = specialist?.aiModel === "claude";
 
-Your task is to analyze the following request and provide market intelligence:
-
-"${originalTask}"
-
-Provide a professional market research report with:
-1. Market overview and size
-2. Key insights and trends
-3. Competitive landscape analysis
-4. Strategic recommendations
-
-Format your response in markdown. Be data-driven and professional.`,
-
-    CreativeWriter: `You are CreativeWriter, an expert business writer specializing in professional documents and investment memos.
-
-Your task is to create a polished professional document based on:
-
-"${originalTask}"
-
-Create a well-structured, professional document with:
-1. Clear executive summary
-2. Key highlights and findings
-3. Actionable recommendations
-4. Professional conclusion
-
-Format your response in markdown. Be persuasive and clear.`,
-  };
-
-  const prompt = prompts[subtask.specialistName!] || prompts.CreativeWriter;
-
-  // Use Claude for CodeAuditor (better at code analysis)
-  if (subtask.specialistName === "CodeAuditor") {
+  // Decrypt per-agent API key if available
+  let agentApiKey: string | undefined;
+  if (specialist?.apiKey) {
     try {
-      console.log(`[CodeAuditor] Attempting Claude API...`);
-      const message = await anthropic.messages.create({
+      agentApiKey = decrypt(specialist.apiKey);
+      console.log(`[${subtask.specialistName}] Using agent's own API key`);
+    } catch (err) {
+      console.warn(`[${subtask.specialistName}] Failed to decrypt API key, using global key`);
+    }
+  }
+
+  // Try preferred model first
+  if (preferClaude) {
+    try {
+      console.log(`[${subtask.specialistName}] Using Claude (preferred)...`);
+      const claudeClient = agentApiKey
+        ? new Anthropic({ apiKey: agentApiKey })
+        : anthropic;
+      const message = await claudeClient.messages.create({
         model: "claude-3-5-sonnet-20241022",
         max_tokens: 1500,
-        messages: [
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
+        messages: [{ role: "user", content: prompt }],
       });
 
       const content = message.content[0];
       if (content.type === "text") {
-        console.log(`[CodeAuditor] ✅ Claude API succeeded`);
+        console.log(`[${subtask.specialistName}] ✅ Claude succeeded`);
         return content.text;
       }
 
       return "Analysis completed successfully.";
     } catch (error) {
-      console.warn(`[CodeAuditor] ⚠️  Claude API failed, falling back to OpenAI:`, error);
-      // Fall through to OpenAI fallback below
+      console.warn(`[${subtask.specialistName}] ⚠️  Claude failed, falling back to OpenAI:`, error);
     }
   }
 
-  // Use OpenAI for MarketAnalyst and CreativeWriter (better writing)
-  // Also serves as fallback for CodeAuditor if Claude fails
+  // OpenAI (primary or fallback)
   try {
-    const modelInfo = subtask.specialistName === "CodeAuditor"
-      ? "(OpenAI fallback)"
-      : "(primary)";
+    const modelInfo = preferClaude ? "(OpenAI fallback)" : "(primary)";
     console.log(`[${subtask.specialistName}] Using OpenAI ${modelInfo}...`);
 
-    const completion = await openai.chat.completions.create({
+    const openaiClient = (!preferClaude && agentApiKey)
+      ? new OpenAI({ apiKey: agentApiKey })
+      : openai;
+    const completion = await openaiClient.chat.completions.create({
       model: "gpt-4o",
       max_tokens: 1500,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
+      messages: [{ role: "user", content: prompt }],
     });
 
     const content = completion.choices[0]?.message?.content;
@@ -346,159 +420,9 @@ Format your response in markdown. Be persuasive and clear.`,
 
     return "Analysis completed successfully.";
   } catch (error) {
-    console.warn(`[${subtask.specialistName}] OpenAI also failed, using mock response for demo:`, error);
-
-    // Final fallback: Use mock responses for demo purposes
-    return generateMockResponse(subtask.specialistName!, originalTask);
+    console.warn(`[${subtask.specialistName}] OpenAI also failed, using fallback response:`, error);
+    return `# ${subtask.specialistName} Report\n\nAnalysis completed for: "${originalTask.substring(0, 100)}"\n\nBoth AI providers were unavailable. Please try again later.\n\n---\n*${subtask.specialistName} | $${subtask.cost?.toFixed(2)} USDC via x402*`;
   }
-}
-
-/**
- * Generate realistic mock responses for demo purposes
- * Used when both Claude and OpenAI APIs are unavailable
- */
-function generateMockResponse(specialist: string, task: string): string {
-  const mockResponses: Record<string, string> = {
-    CodeAuditor: `# 🔒 Security Analysis Report
-
-## Executive Summary
-Comprehensive security audit completed for the provided code. Analysis focused on identifying vulnerabilities, security best practices, and potential improvements.
-
-**Task Analyzed:** "${task.substring(0, 80)}${task.length > 80 ? '...' : ''}"
-
-## 🎯 Key Findings
-
-### High Priority
-- **Input Validation**: User-supplied data should be validated and sanitized
-- **Authentication**: Ensure proper token management and secure storage
-- **API Security**: Rate limiting and CORS policies should be implemented
-
-### Medium Priority
-- **Error Handling**: Avoid exposing internal error details to clients
-- **Type Safety**: TypeScript types provide good compile-time safety
-- **Dependency Security**: Regular audits of npm packages recommended
-
-### Low Priority
-- **Code Structure**: Well-organized with clear separation of concerns
-- **Generic Types**: Good use of TypeScript generics for type safety
-
-## ✅ Recommendations
-
-1. Implement input validation middleware using libraries like Zod or Joi
-2. Add rate limiting to prevent abuse (e.g., express-rate-limit)
-3. Enable security headers (Helmet.js for Express/Next.js)
-4. Regular dependency updates and security audits
-5. Consider implementing CSRF protection for state-changing operations
-
-## 📊 Summary
-Overall code quality is **good** with room for security hardening. No critical vulnerabilities detected, but recommended improvements will enhance production readiness.
-
----
-*Analysis completed by CodeAuditor | Payment: $1.00 USDC via x402*`,
-
-    MarketAnalyst: `# 📊 Market Research Analysis
-
-## Market Overview
-
-**Request Context:** "${task.substring(0, 80)}${task.length > 80 ? '...' : ''}"
-
-### Market Size & Growth
-- **Total Addressable Market (TAM)**: $2.5B in target segment
-- **Year-over-Year Growth**: 23% industry average
-- **Market Maturity**: Rapidly expanding with strong adoption trends
-
-## 🔍 Key Insights
-
-### Competitive Landscape
-- **Market Leaders**: 3 major players controlling ~45% market share
-- **Fragmented Tail**: 100+ smaller competitors in specialized niches
-- **Differentiation Opportunity**: Strong potential in mid-market segment
-
-### Industry Trends
-1. **AI Integration**: 67% adoption rate among enterprise customers
-2. **Automation Demand**: Increasing focus on autonomous systems
-3. **Cost Efficiency**: Zero-fee transactions becoming table stakes
-
-### Market Positioning
-- ✅ **Strengths**: Technical innovation, unique value proposition
-- ⚠️ **Challenges**: Market education, competitive pricing pressure
-- 🎯 **Opportunities**: Underserved mid-market, emerging use cases
-
-## 💡 Strategic Recommendations
-
-1. **Focus on differentiation** through specialized capabilities
-2. **Target mid-market** where competition is less intense
-3. **Build network effects** via agent marketplace dynamics
-4. **Emphasize cost advantages** (zero gas fees, instant settlement)
-
-## 📈 Investment Thesis
-**Favorable market conditions** with clear product-market fit indicators. Strong growth trajectory supported by industry tailwinds and technological differentiation.
-
----
-*Analysis completed by MarketAnalyst | Payment: $0.75 USDC via x402 | Privacy: BITE encrypted*`,
-
-    CreativeWriter: `# 📝 Investment Memo
-
-## Executive Summary
-
-**Subject:** "${task.substring(0, 100)}${task.length > 100 ? '...' : ''}"
-
-This memo presents a comprehensive analysis of the investment opportunity, synthesizing technical evaluation, market research, and strategic recommendations.
-
-## 🎯 Investment Highlights
-
-### Core Strengths
-✓ **Technical Excellence**: Production-ready architecture with modern tech stack
-✓ **Market Opportunity**: $2.5B TAM with 23% YoY growth
-✓ **Competitive Advantage**: Unique positioning in agent-to-agent commerce
-✓ **Economic Model**: Zero-fee infrastructure enables viable micropayments
-
-### Risk Mitigation
-- Proven technical implementation
-- Clear market differentiation strategy
-- Scalable infrastructure on SKALE network
-- Strong security and privacy features
-
-## 📊 Market Analysis
-
-The agentic commerce space represents a **paradigm shift** in how AI systems interact economically. Current market fragmentation creates opportunity for platforms that enable seamless agent-to-agent transactions.
-
-### Competitive Positioning
-- First-mover advantage in specialized agent marketplaces
-- Technical moat through SKALE integration and x402 protocol
-- Network effects from agent discovery and reputation systems
-
-## 🚀 Execution Roadmap
-
-**Phase 1 (Q1 2026)**: MVP launch with core specialist agents
-**Phase 2 (Q2 2026)**: Market expansion and specialist network growth
-**Phase 3 (Q3 2026)**: Enterprise offering and horizontal scaling
-
-## 💼 Investment Recommendation
-
-**INVEST** - Strong fundamentals with asymmetric risk/reward profile
-
-### Rationale
-1. Large addressable market with strong growth dynamics
-2. Differentiated technology stack and unique value proposition
-3. Clear path to monetization through transaction fees
-4. Experienced team with domain expertise
-
-### Next Steps
-- Technical due diligence review
-- Market validation with pilot customers
-- Financial modeling and projections
-- Term sheet negotiation
-
----
-*Professionally crafted by CreativeWriter | Payment: $0.50 USDC via x402*
-
-**Total Project Cost**: Variable based on specialist requirements
-**Delivery Time**: ~3-5 seconds (SKALE instant finality)
-**Gas Fees**: $0.00 (gasless transactions)`
-  };
-
-  return mockResponses[specialist] || mockResponses.CreativeWriter;
 }
 
 export function selectSpecialist(
@@ -506,12 +430,11 @@ export function selectSpecialist(
   capability: string
 ): Specialist | null {
   const candidates = specialists.filter((s) =>
-    s.capabilities.includes(capability as Specialist["capabilities"][number])
+    s.capabilities.includes(capability)
   );
 
   if (candidates.length === 0) return null;
 
-  // Sort by reputation (highest first), then price (lowest first)
   candidates.sort((a, b) => {
     if (b.reputation !== a.reputation) return b.reputation - a.reputation;
     return a.priceUsdc - b.priceUsdc;
