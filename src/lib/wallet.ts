@@ -1,87 +1,62 @@
 import { ethers } from "ethers";
-import { getProvider, getUSDCContract, formatUSDC, SKALE_CONFIG } from "./blockchain-config";
+import { getProvider, getUSDCContract, formatUSDC, withRpcFailover } from "./blockchain-config";
 
 /**
  * Server-side wallet management for the coordinator
  * This wallet is used to pay specialist agents on SKALE
  */
 
-let coordinatorWallet: ethers.Wallet | null = null;
-let cachedRpcUrl: string | null = null;
-
 /**
- * Initialize coordinator wallet from private key in environment
- */
-export function getCoordinatorWallet(): ethers.Wallet {
-    const currentRpcUrl = SKALE_CONFIG.rpcUrl;
-
-    // Re-create wallet if RPC URL has changed (e.g. env var update)
-    if (coordinatorWallet && cachedRpcUrl === currentRpcUrl) {
-        return coordinatorWallet;
-    }
-
-    const privateKey = process.env.COORDINATOR_PRIVATE_KEY;
-
-    if (!privateKey) {
-        throw new Error(
-            "COORDINATOR_PRIVATE_KEY not configured in environment variables"
-        );
-    }
-
-    const provider = getProvider();
-    coordinatorWallet = new ethers.Wallet(privateKey, provider);
-    cachedRpcUrl = currentRpcUrl;
-
-    console.log(`[Wallet] Initialized coordinator wallet: ${coordinatorWallet.address}`);
-    console.log(`[Wallet] Using RPC: ${SKALE_CONFIG.rpcUrl}`);
-
-    return coordinatorWallet;
-}
-
-/**
- * Get coordinator wallet address
+ * Get coordinator wallet address (does not need RPC)
  */
 export function getCoordinatorAddress(): string {
-    const wallet = getCoordinatorWallet();
+    const privateKey = process.env.COORDINATOR_PRIVATE_KEY;
+    if (!privateKey) {
+        throw new Error("COORDINATOR_PRIVATE_KEY not configured in environment variables");
+    }
+    const wallet = new ethers.Wallet(privateKey);
     return wallet.address;
 }
 
 /**
- * Get coordinator's USDC balance
+ * Get coordinator wallet connected to a specific provider
+ */
+export function getCoordinatorWallet(provider?: ethers.Provider): ethers.Wallet {
+    const privateKey = process.env.COORDINATOR_PRIVATE_KEY;
+    if (!privateKey) {
+        throw new Error("COORDINATOR_PRIVATE_KEY not configured in environment variables");
+    }
+    const p = provider || getProvider();
+    return new ethers.Wallet(privateKey, p);
+}
+
+/**
+ * Get coordinator's USDC balance (with RPC failover)
  */
 export async function getCoordinatorUSDCBalance(): Promise<string> {
-    try {
-        const wallet = getCoordinatorWallet();
-        const usdcContract = getUSDCContract(wallet);
+    const address = getCoordinatorAddress();
+    console.log(`[Wallet] Fetching USDC balance for ${address}...`);
 
-        console.log(`[Wallet] Fetching USDC balance for ${wallet.address} via ${SKALE_CONFIG.rpcUrl}`);
-        const balance = await usdcContract.balanceOf(wallet.address);
+    return withRpcFailover(async (provider) => {
+        const wallet = new ethers.Wallet(process.env.COORDINATOR_PRIVATE_KEY!, provider);
+        const usdcContract = getUSDCContract(wallet);
+        const balance = await usdcContract.balanceOf(address);
         const formatted = formatUSDC(balance);
         console.log(`[Wallet] Raw balance: ${balance.toString()}, Formatted: ${formatted}`);
         return formatted;
-    } catch (error) {
-        console.error("[Wallet] Error fetching USDC balance:", error);
-        throw error;
-    }
+    });
 }
 
 /**
  * Get coordinator's native sFUEL balance (for gas)
  */
 export async function getCoordinatorSFuelBalance(): Promise<string> {
-    try {
-        const wallet = getCoordinatorWallet();
+    const address = getCoordinatorAddress();
 
-        if (!wallet.provider) {
-            throw new Error("Wallet provider not initialized");
-        }
-
-        const balance = await wallet.provider.getBalance(wallet.address);
+    return withRpcFailover(async (provider) => {
+        const balance = await provider.getBalance(address);
         return ethers.formatEther(balance);
-    } catch (error) {
-        console.error("[Wallet] Error fetching sFUEL balance:", error);
-        throw error;
-    }
+    });
 }
 
 /**

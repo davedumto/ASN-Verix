@@ -1,24 +1,7 @@
 import { Payment } from "@/types/payment";
 import { ethers } from "ethers";
 import { getCoordinatorWallet } from "@/lib/wallet";
-import { getUSDCContract, parseUSDC, formatUSDC } from "@/lib/blockchain-config";
-
-/** Retry an async fn up to `attempts` times with exponential backoff */
-async function withRetry<T>(fn: () => Promise<T>, attempts = 4, delayMs = 500): Promise<T> {
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (err: unknown) {
-      const isTimeout =
-        err instanceof Error &&
-        (err.message.includes("TIMEOUT") || err.message.includes("timeout"));
-      if (!isTimeout || i === attempts - 1) throw err;
-      console.log(`[Payment] RPC timeout, retrying (${i + 1}/${attempts}) in ${delayMs * (i + 1)}ms...`);
-      await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
-    }
-  }
-  throw new Error("withRetry: unreachable");
-}
+import { getUSDCContract, parseUSDC, formatUSDC, withRpcFailover } from "@/lib/blockchain-config";
 
 /**
  * Map specialist name to their wallet address by deriving it from the private key in env vars.
@@ -58,44 +41,51 @@ export async function createPayment(
   console.log(`[Payment] Creating USDC payment of $${amount} to ${specialistId}...`);
 
   try {
-    // Get coordinator wallet
-    const wallet = getCoordinatorWallet();
-    const usdcContract = getUSDCContract(wallet);
-
-    // Derive real specialist wallet address from their private key
     const specialistAddress = getSpecialistAddress(specialistId);
 
-    console.log(`[Payment] From: ${wallet.address}`);
-    console.log(`[Payment] To: ${specialistAddress}`);
+    // Use RPC failover for the actual blockchain operations
+    const result = await withRpcFailover(async (provider) => {
+      const wallet = getCoordinatorWallet(provider);
+      const usdcContract = getUSDCContract(wallet);
 
-    // Check coordinator balance (with retry for flaky RPC)
-    const balance = await withRetry(() => usdcContract.balanceOf(wallet.address));
-    const balanceFormatted = formatUSDC(balance);
-    console.log(`[Payment] Coordinator USDC balance: $${balanceFormatted}`);
+      console.log(`[Payment] From: ${wallet.address}`);
+      console.log(`[Payment] To: ${specialistAddress}`);
 
-    const amountWei = parseUSDC(amount.toString());
+      // Check coordinator balance
+      const balance = await usdcContract.balanceOf(wallet.address);
+      const balanceFormatted = formatUSDC(balance);
+      console.log(`[Payment] Coordinator USDC balance: $${balanceFormatted}`);
 
-    if (balance < amountWei) {
-      throw new Error(
-        `Insufficient USDC balance. Need $${amount}, have $${balanceFormatted}`
-      );
-    }
+      const amountWei = parseUSDC(amount.toString());
 
-    // Execute USDC transfer on SKALE (with retry for flaky RPC)
-    console.log(`[Payment] Sending ${amount} USDC...`);
-    const tx = await withRetry(() => usdcContract.transfer(specialistAddress, amountWei));
+      if (balance < amountWei) {
+        throw new Error(
+          `Insufficient USDC balance. Need $${amount}, have $${balanceFormatted}`
+        );
+      }
 
-    console.log(`[Payment] Transaction submitted: ${tx.hash}`);
-    console.log(`[Payment] Waiting for confirmation...`);
+      // Execute USDC transfer on SKALE
+      console.log(`[Payment] Sending ${amount} USDC...`);
+      const tx = await usdcContract.transfer(specialistAddress, amountWei);
 
-    // Wait for transaction confirmation (with retry)
-    const receipt = (await withRetry(() => tx.wait())) as ethers.TransactionReceipt;
+      console.log(`[Payment] Transaction submitted: ${tx.hash}`);
+      console.log(`[Payment] Waiting for confirmation...`);
 
-    if (!receipt || receipt.status === 0) {
-      throw new Error("Transaction failed on-chain");
-    }
+      // Wait for transaction confirmation
+      const receipt = await tx.wait();
 
-    console.log(`[Payment] ✅ Payment confirmed in block ${receipt.blockNumber}`);
+      if (receipt.status === 0) {
+        throw new Error("Transaction failed on-chain");
+      }
+
+      console.log(`[Payment] ✅ Payment confirmed in block ${receipt.blockNumber}`);
+
+      return {
+        txHash: tx.hash,
+        blockNumber: receipt.blockNumber,
+        from: wallet.address,
+      };
+    });
 
     const payment: Payment = {
       id: crypto.randomUUID(),
@@ -103,9 +93,9 @@ export async function createPayment(
       specialistId,
       amount,
       currency: "USDC",
-      txHash: tx.hash,
-      blockNumber: receipt.blockNumber,
-      from: wallet.address,
+      txHash: result.txHash,
+      blockNumber: result.blockNumber,
+      from: result.from,
       to: specialistAddress,
       status: "confirmed",
       protocol: "x402",
@@ -136,23 +126,18 @@ export async function createPayment(
 
 export async function verifyPayment(txHash: string): Promise<boolean> {
   try {
-    const wallet = getCoordinatorWallet();
+    return await withRpcFailover(async (provider) => {
+      const receipt = await provider.getTransactionReceipt(txHash);
 
-    if (!wallet.provider) {
-      throw new Error("Wallet provider not initialized");
-    }
+      if (!receipt) {
+        console.log(`[Payment] Transaction ${txHash} not found`);
+        return false;
+      }
 
-    const receipt = await wallet.provider.getTransactionReceipt(txHash);
-
-    if (!receipt) {
-      console.log(`[Payment] Transaction ${txHash} not found`);
-      return false;
-    }
-
-    const confirmed = receipt.status === 1;
-    console.log(`[Payment] Transaction ${txHash} status: ${confirmed ? "confirmed" : "failed"}`);
-
-    return confirmed;
+      const confirmed = receipt.status === 1;
+      console.log(`[Payment] Transaction ${txHash} status: ${confirmed ? "confirmed" : "failed"}`);
+      return confirmed;
+    });
   } catch (error) {
     console.error(`[Payment] Error verifying tx ${txHash}:`, error);
     return false;
@@ -163,7 +148,6 @@ export async function settleViaAP2(
   paymentId: string
 ): Promise<{ settled: boolean; settlementId: string }> {
   // TODO: Implement AP2 agent-to-agent settlement protocol
-  // For now, just log the settlement intent
   console.log(`[Payment] AP2 settlement logged for payment: ${paymentId}`);
 
   return {

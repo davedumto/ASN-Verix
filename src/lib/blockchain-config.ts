@@ -38,25 +38,55 @@ export const USDC_CONFIG = {
 };
 
 /**
+ * RPC endpoints — primary + fallback.
+ * If the env var is set we use that first, otherwise SKALE native first, Thirdweb second.
+ */
+const RPC_ENDPOINTS = process.env.SKALE_RPC_URL
+    ? [process.env.SKALE_RPC_URL, "https://testnet.skalenodes.com/v1/giant-half-dual-testnet", "https://974399131.rpc.thirdweb.com"]
+    : ["https://testnet.skalenodes.com/v1/giant-half-dual-testnet", "https://974399131.rpc.thirdweb.com"];
+
+/**
  * Get configured JSON-RPC provider for SKALE
  * Uses staticNetwork to skip ethers' network auto-detection,
  * which can fail silently on some SKALE RPC endpoints.
- * Uses FetchRequest with extended timeout for production reliability.
  */
-export function getProvider(): ethers.JsonRpcProvider {
+export function getProvider(rpcUrl?: string): ethers.JsonRpcProvider {
+    const url = rpcUrl || SKALE_CONFIG.rpcUrl;
     const network = new ethers.Network(SKALE_CONFIG.chainName, SKALE_CONFIG.chainId);
-    const fetchReq = new ethers.FetchRequest(SKALE_CONFIG.rpcUrl);
-    fetchReq.timeout = 8000; // 8s per request — short enough for retries to fit within Vercel's function limit
+    const fetchReq = new ethers.FetchRequest(url);
+    fetchReq.timeout = 30_000; // 30s — production RPCs can be slow
     const provider = new ethers.JsonRpcProvider(fetchReq, network, {
         staticNetwork: network,
         batchMaxCount: 1, // disable batching — testnet RPCs handle single requests better
     });
 
     // Override fee data so every tx uses zero gas price (SKALE is gasless).
-    // Without this, ethers auto-detects ~1 gwei which drains sFUEL.
     provider.getFeeData = async () => new ethers.FeeData(BigInt(0), BigInt(0), BigInt(0));
 
     return provider;
+}
+
+/**
+ * Try an async operation with RPC failover.
+ * Tries the primary RPC, then falls back to alternatives on timeout/error.
+ */
+export async function withRpcFailover<T>(fn: (provider: ethers.JsonRpcProvider) => Promise<T>): Promise<T> {
+    let lastError: unknown;
+    for (const rpcUrl of RPC_ENDPOINTS) {
+        try {
+            const provider = getProvider(rpcUrl);
+            return await fn(provider);
+        } catch (error: unknown) {
+            const code = (error as { code?: string })?.code;
+            console.warn(`[RPC] ${rpcUrl} failed (${code}), trying next...`);
+            lastError = error;
+            // Only failover on network/timeout errors, not on-chain errors
+            if (code !== "TIMEOUT" && code !== "SERVER_ERROR" && code !== "NETWORK_ERROR") {
+                throw error; // contract revert, insufficient funds, etc. — don't retry
+            }
+        }
+    }
+    throw lastError;
 }
 
 /**
