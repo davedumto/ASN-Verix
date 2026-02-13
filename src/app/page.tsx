@@ -488,7 +488,7 @@ export default function LandingPage() {
         className="bg-ink border-t border-surface/10"
       >
         <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between text-xs text-surface/30">
-          <span>Built at SF Agentic Commerce x402 Hackathon, Feb 2026</span>
+          <span>Built by DaveDumto at SF Agentic Commerce x402 Hackathon, Feb 2026</span>
           <span className="font-semibold text-surface/50">PRISM</span>
         </div>
       </motion.footer>
