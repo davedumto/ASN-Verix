@@ -9,7 +9,7 @@ export const SKALE_CONFIG = {
     chainName: "SKALE Calypso Hub Testnet",
     rpcUrl:
         process.env.SKALE_RPC_URL ||
-        "https://staging-v3.skalenodes.com/v1/staging-utter-unripe-menkar",
+        "https://testnet.skalenodes.com/v1/giant-half-dual-testnet",
     blockExplorer: "https://staging-utter-unripe-menkar.explorer.staging-v3.skalenodes.com",
     nativeCurrency: {
         name: "sFUEL",
@@ -39,9 +39,12 @@ export const USDC_CONFIG = {
 
 /**
  * Get configured JSON-RPC provider for SKALE
+ * Uses staticNetwork to skip ethers' network auto-detection,
+ * which can fail silently on some SKALE RPC endpoints.
  */
 export function getProvider(): ethers.JsonRpcProvider {
-    return new ethers.JsonRpcProvider(SKALE_CONFIG.rpcUrl);
+    const network = new ethers.Network(SKALE_CONFIG.chainName, SKALE_CONFIG.chainId);
+    return new ethers.JsonRpcProvider(SKALE_CONFIG.rpcUrl, network, { staticNetwork: network });
 }
 
 /**
