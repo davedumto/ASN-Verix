@@ -9,7 +9,7 @@ export const SKALE_CONFIG = {
     chainName: "SKALE Calypso Hub Testnet",
     rpcUrl:
         process.env.SKALE_RPC_URL ||
-        "https://974399131.rpc.thirdweb.com",
+        "https://staging-v3.skalenodes.com/v1/staging-utter-unripe-menkar",
     blockExplorer: "https://staging-utter-unripe-menkar.explorer.staging-v3.skalenodes.com",
     nativeCurrency: {
         name: "sFUEL",

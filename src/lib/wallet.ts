@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { getProvider, getUSDCContract, formatUSDC } from "./blockchain-config";
+import { getProvider, getUSDCContract, formatUSDC, SKALE_CONFIG } from "./blockchain-config";
 
 /**
  * Server-side wallet management for the coordinator
@@ -7,12 +7,16 @@ import { getProvider, getUSDCContract, formatUSDC } from "./blockchain-config";
  */
 
 let coordinatorWallet: ethers.Wallet | null = null;
+let cachedRpcUrl: string | null = null;
 
 /**
  * Initialize coordinator wallet from private key in environment
  */
 export function getCoordinatorWallet(): ethers.Wallet {
-    if (coordinatorWallet) {
+    const currentRpcUrl = SKALE_CONFIG.rpcUrl;
+
+    // Re-create wallet if RPC URL has changed (e.g. env var update)
+    if (coordinatorWallet && cachedRpcUrl === currentRpcUrl) {
         return coordinatorWallet;
     }
 
@@ -26,8 +30,10 @@ export function getCoordinatorWallet(): ethers.Wallet {
 
     const provider = getProvider();
     coordinatorWallet = new ethers.Wallet(privateKey, provider);
+    cachedRpcUrl = currentRpcUrl;
 
     console.log(`[Wallet] Initialized coordinator wallet: ${coordinatorWallet.address}`);
+    console.log(`[Wallet] Using RPC: ${SKALE_CONFIG.rpcUrl}`);
 
     return coordinatorWallet;
 }
@@ -48,8 +54,11 @@ export async function getCoordinatorUSDCBalance(): Promise<string> {
         const wallet = getCoordinatorWallet();
         const usdcContract = getUSDCContract(wallet);
 
+        console.log(`[Wallet] Fetching USDC balance for ${wallet.address} via ${SKALE_CONFIG.rpcUrl}`);
         const balance = await usdcContract.balanceOf(wallet.address);
-        return formatUSDC(balance);
+        const formatted = formatUSDC(balance);
+        console.log(`[Wallet] Raw balance: ${balance.toString()}, Formatted: ${formatted}`);
+        return formatted;
     } catch (error) {
         console.error("[Wallet] Error fetching USDC balance:", error);
         throw error;

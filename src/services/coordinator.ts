@@ -102,12 +102,7 @@ export async function executeCoordinator(
     await taskStore.update(taskId, { subtasks: [...subtasks] });
 
     try {
-      // Execute specialist with real AI
-      const result = await executeSpecialist(subtask, description);
-
-      await pushEvent(taskId, "specialist", `${subtask.specialistName} delivered results. Initiating x402 payment...`, "info");
-
-      // Check running total against spend cap before paying
+      // Check running total against spend cap BEFORE paying
       if (totalSpent + (subtask.cost || 0) > effectiveCap) {
         await pushEvent(taskId, "system", `Payment blocked: cumulative spend $${(totalSpent + (subtask.cost || 0)).toFixed(2)} would exceed cap $${effectiveCap.toFixed(2)}.`, "error");
         subtasks[i] = { ...subtask, status: "failed" };
@@ -115,24 +110,37 @@ export async function executeCoordinator(
         continue;
       }
 
-      // Pay the specialist on-chain via x402
+      // Pay the specialist on-chain via x402 BEFORE executing
+      await pushEvent(taskId, "specialist", `Initiating x402 payment to ${subtask.specialistName}...`, "pending");
       console.log(`[Coordinator] Paying ${subtask.specialistName} $${subtask.cost} USDC...`);
       const payment = await createPayment(taskId, subtask.specialistName!, subtask.cost!);
       payments.push(payment);
 
-      if (payment.status === "confirmed") {
-        totalSpent += subtask.cost || 0;
-        console.log(`[Coordinator] Payment confirmed: ${payment.txHash}`);
-        await pushEvent(
-          taskId,
-          "payment",
-          `Paid $${subtask.cost?.toFixed(2)} USDC to ${subtask.specialistName} — tx: ${payment.txHash?.slice(0, 10)}... (block #${payment.blockNumber})`,
-          "success"
-        );
-      } else {
-        console.warn(`[Coordinator] Payment failed for ${subtask.specialistName}`);
-        await pushEvent(taskId, "payment", `Payment to ${subtask.specialistName} failed on-chain.`, "error");
+      if (payment.status !== "confirmed") {
+        // Payment failed — do NOT execute the specialist
+        console.warn(`[Coordinator] Payment failed for ${subtask.specialistName} — skipping execution`);
+        await pushEvent(taskId, "payment", `Payment to ${subtask.specialistName} failed on-chain. Agent will not execute.`, "error");
+        subtasks[i] = { ...subtask, status: "failed" };
+        await taskStore.update(taskId, { subtasks: [...subtasks] });
+        continue;
       }
+
+      // Payment confirmed — proceed with execution
+      totalSpent += subtask.cost || 0;
+      console.log(`[Coordinator] Payment confirmed: ${payment.txHash}`);
+      await pushEvent(
+        taskId,
+        "payment",
+        `Paid $${subtask.cost?.toFixed(2)} USDC to ${subtask.specialistName} — tx: ${payment.txHash?.slice(0, 10)}... (block #${payment.blockNumber})`,
+        "success"
+      );
+
+      await pushEvent(taskId, "specialist", `${subtask.specialistName} is processing...`, "pending");
+
+      // Execute specialist with real AI (only after payment confirmed)
+      const result = await executeSpecialist(subtask, description);
+
+      await pushEvent(taskId, "specialist", `${subtask.specialistName} delivered results.`, "info");
 
       // Update subtask as completed
       subtasks[i] = {
