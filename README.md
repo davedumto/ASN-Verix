@@ -57,6 +57,14 @@ contracts/
   TestUSDC.sol             # ERC-20 test token (6 decimals, faucet)
 ```
 
+## Verix Roadmap
+
+The project is evolving into **Verifiable Autonomous Work Infrastructure**:
+multi-agent execution with structured traces, Boundless proof receipts, and
+Trustless Work escrow-backed settlement.
+
+- [Foundation & Infrastructure Plan](docs/foundation-infrastructure.md)
+
 ## Quickstart
 
 ### Prerequisites
