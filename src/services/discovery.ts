@@ -1,16 +1,14 @@
+import { prisma } from "@/lib/db";
 import { Specialist } from "@/types/specialist";
 
 /**
  * Discovery Service
  *
- * Registry for specialist agents. Handles:
- * - Specialist registration (in-memory for MVP)
- * - Dynamic lookup for AI routing
- * - Availability checking
+ * Registry for specialist agents. Prisma is the source of truth; the default
+ * specialists are seeded on first use so demo agents survive restarts.
  */
 
-// In-memory registry — seeded with default agents
-const registry: Specialist[] = [
+const DEFAULT_SPECIALISTS: Specialist[] = [
   {
     id: "specialist_code_auditor",
     name: "CodeAuditor",
@@ -52,21 +50,111 @@ const registry: Specialist[] = [
   },
 ];
 
-export function getAllSpecialists(): Specialist[] {
-  return registry.filter((s) => s.status !== "offline");
+let seedPromise: Promise<void> | null = null;
+
+function toSpecialist(row: {
+  id: string;
+  name: string;
+  description: string;
+  endpoint: string;
+  walletAddress: string;
+  capabilities: string[];
+  priceUsdc: unknown;
+  reputation: number;
+  totalJobs: number;
+  status: string;
+  aiModel: string | null;
+  apiKey: string | null;
+  apiKeyMasked: string | null;
+}): Specialist {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    endpoint: row.endpoint,
+    walletAddress: row.walletAddress,
+    capabilities: row.capabilities,
+    priceUsdc: Number(row.priceUsdc),
+    reputation: row.reputation,
+    totalJobs: row.totalJobs,
+    status: row.status as Specialist["status"],
+    aiModel: row.aiModel === "claude" ? "claude" : "openai",
+    apiKey: row.apiKey ?? undefined,
+    apiKeyMasked: row.apiKeyMasked ?? undefined,
+  };
+}
+
+async function ensureSeeded(): Promise<void> {
+  if (seedPromise) return seedPromise;
+
+  seedPromise = (async () => {
+    for (const specialist of DEFAULT_SPECIALISTS) {
+      await prisma.specialist.upsert({
+        where: { name: specialist.name },
+        create: {
+          id: specialist.id,
+          name: specialist.name,
+          description: specialist.description,
+          endpoint: specialist.endpoint,
+          walletAddress: specialist.walletAddress,
+          capabilities: specialist.capabilities,
+          priceUsdc: specialist.priceUsdc,
+          reputation: specialist.reputation,
+          totalJobs: specialist.totalJobs,
+          status: specialist.status,
+          aiModel: specialist.aiModel ?? "openai",
+        },
+        update: {
+          description: specialist.description,
+          endpoint: specialist.endpoint,
+          capabilities: specialist.capabilities,
+          priceUsdc: specialist.priceUsdc,
+          reputation: specialist.reputation,
+          totalJobs: specialist.totalJobs,
+          status: specialist.status,
+          aiModel: specialist.aiModel ?? "openai",
+        },
+      });
+
+      await prisma.reputation.upsert({
+        where: { specialistId: specialist.id },
+        create: {
+          specialistId: specialist.id,
+          score: specialist.reputation,
+          totalRatings: specialist.totalJobs,
+        },
+        update: {
+          score: specialist.reputation,
+          totalRatings: specialist.totalJobs,
+        },
+      });
+    }
+  })();
+
+  return seedPromise;
+}
+
+export async function getAllSpecialists(): Promise<Specialist[]> {
+  await ensureSeeded();
+  const rows = await prisma.specialist.findMany({
+    where: { status: { not: "offline" } },
+    orderBy: [{ reputation: "desc" }, { priceUsdc: "asc" }],
+  });
+  return rows.map(toSpecialist);
 }
 
 /**
  * Returns a compact summary of all specialists for the AI router.
  * The coordinator LLM uses this to decide which agents to assign.
  */
-export function getSpecialistSummariesForRouting(): {
+export async function getSpecialistSummariesForRouting(): Promise<{
   name: string;
   description: string;
   capabilities: string[];
   priceUsdc: number;
-}[] {
-  return getAllSpecialists().map((s) => ({
+}[]> {
+  const specialists = await getAllSpecialists();
+  return specialists.map((s) => ({
     name: s.name,
     description: s.description,
     capabilities: s.capabilities,
@@ -74,28 +162,79 @@ export function getSpecialistSummariesForRouting(): {
   }));
 }
 
-export function getSpecialistByName(name: string): Specialist | undefined {
-  return registry.find((s) => s.name === name && s.status !== "offline");
+export async function getSpecialistByName(name: string): Promise<Specialist | undefined> {
+  await ensureSeeded();
+  const row = await prisma.specialist.findFirst({
+    where: { name, status: { not: "offline" } },
+  });
+  return row ? toSpecialist(row) : undefined;
 }
 
-export function getSpecialistById(id: string): Specialist | undefined {
-  return registry.find((s) => s.id === id);
+export async function getSpecialistById(id: string): Promise<Specialist | undefined> {
+  await ensureSeeded();
+  const row = await prisma.specialist.findUnique({ where: { id } });
+  return row ? toSpecialist(row) : undefined;
 }
 
-export function registerSpecialist(specialist: Specialist): void {
-  const existing = registry.findIndex((s) => s.id === specialist.id);
-  if (existing >= 0) {
-    registry[existing] = specialist;
-  } else {
-    registry.push(specialist);
-  }
+export async function registerSpecialist(specialist: Specialist): Promise<Specialist> {
+  await ensureSeeded();
+  const row = await prisma.specialist.upsert({
+    where: { name: specialist.name },
+    create: {
+      id: specialist.id,
+      name: specialist.name,
+      description: specialist.description,
+      endpoint: specialist.endpoint,
+      walletAddress: specialist.walletAddress,
+      capabilities: specialist.capabilities,
+      priceUsdc: specialist.priceUsdc,
+      reputation: specialist.reputation,
+      totalJobs: specialist.totalJobs,
+      status: specialist.status,
+      aiModel: specialist.aiModel ?? "openai",
+      apiKey: specialist.apiKey,
+      apiKeyMasked: specialist.apiKeyMasked,
+    },
+    update: {
+      description: specialist.description,
+      endpoint: specialist.endpoint,
+      walletAddress: specialist.walletAddress,
+      capabilities: specialist.capabilities,
+      priceUsdc: specialist.priceUsdc,
+      reputation: specialist.reputation,
+      totalJobs: specialist.totalJobs,
+      status: specialist.status,
+      aiModel: specialist.aiModel ?? "openai",
+      apiKey: specialist.apiKey,
+      apiKeyMasked: specialist.apiKeyMasked,
+    },
+  });
+
+  await prisma.reputation.upsert({
+    where: { specialistId: row.id },
+    create: {
+      specialistId: row.id,
+      score: specialist.reputation,
+      totalRatings: specialist.totalJobs,
+    },
+    update: {
+      score: specialist.reputation,
+      totalRatings: specialist.totalJobs,
+    },
+  });
+
+  return toSpecialist(row);
 }
 
-export function removeSpecialist(id: string): boolean {
-  const idx = registry.findIndex((s) => s.id === id);
-  if (idx >= 0) {
-    registry.splice(idx, 1);
-    return true;
-  }
-  return false;
+export async function removeSpecialist(id: string): Promise<boolean> {
+  await ensureSeeded();
+  const row = await prisma.specialist.findUnique({ where: { id } });
+  if (!row) return false;
+
+  await prisma.specialist.update({
+    where: { id },
+    data: { status: "offline" },
+  });
+
+  return true;
 }

@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-
-// In-memory reputation store for MVP
-const reputationScores: Record<string, { score: number; totalRatings: number }> =
-  {
-    specialist_code_auditor: { score: 95, totalRatings: 142 },
-    specialist_market_analyst: { score: 88, totalRatings: 98 },
-    specialist_creative_writer: { score: 92, totalRatings: 215 },
-  };
+import {
+  getAllReputations,
+  getReputation,
+  updateReputation,
+} from "@/services/reputation";
 
 export async function GET() {
+  const reputationScores = await getAllReputations();
   return NextResponse.json(reputationScores);
 }
 
@@ -24,34 +22,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (rating < 0 || rating > 100) {
+    if (typeof rating !== "number" || rating < 0 || rating > 100) {
       return NextResponse.json(
         { error: "Rating must be between 0 and 100" },
         { status: 400 }
       );
     }
 
-    const current = reputationScores[specialistId] || {
-      score: 50,
-      totalRatings: 0,
-    };
-
-    // Simple weighted average
-    const newTotal = current.totalRatings + 1;
-    const newScore = Math.round(
-      (current.score * current.totalRatings + rating) / newTotal
-    );
-
-    reputationScores[specialistId] = {
-      score: newScore,
-      totalRatings: newTotal,
-    };
+    const current = await getReputation(specialistId);
+    const updated = await updateReputation(specialistId, rating);
 
     return NextResponse.json({
       specialistId,
       previousScore: current.score,
-      newScore,
-      totalRatings: newTotal,
+      newScore: updated.score,
+      totalRatings: updated.totalRatings,
     });
   } catch (error) {
     console.error("Reputation update failed:", error);

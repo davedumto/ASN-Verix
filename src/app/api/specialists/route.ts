@@ -7,7 +7,7 @@ import {
 import { encrypt, maskApiKey } from "@/lib/encryption";
 
 export async function GET() {
-  const specialists = getAllSpecialists();
+  const specialists = await getAllSpecialists();
 
   // Strip encrypted API keys — only send masked version to client
   const safe = specialists.map((s) => ({
@@ -49,13 +49,13 @@ export async function POST(request: NextRequest) {
       apiKeyMasked: apiKey ? maskApiKey(apiKey) : undefined,
     };
 
-    registerSpecialist(specialist);
+    const registered = await registerSpecialist(specialist);
     console.log(`[API] Registered specialist: ${specialist.name} (API key: ${apiKey ? "provided" : "none"})`);
 
     // Return without the encrypted key
     return NextResponse.json(
       {
-        ...specialist,
+        ...registered,
         apiKey: undefined,
       },
       { status: 201 }
@@ -78,7 +78,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "ID is required" }, { status: 400 });
     }
 
-    const removed = removeSpecialist(id);
+    const removed = await removeSpecialist(id);
     if (!removed) {
       return NextResponse.json({ error: "Specialist not found" }, { status: 404 });
     }

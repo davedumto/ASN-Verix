@@ -210,7 +210,7 @@ export async function executeCoordinator(
  * Falls back to keyword matching if the LLM call fails.
  */
 async function decomposeTaskWithAI(description: string): Promise<Subtask[]> {
-  const specialists = getSpecialistSummariesForRouting();
+  const specialists = await getSpecialistSummariesForRouting();
 
   if (specialists.length === 0) {
     console.warn("[Coordinator] No specialists registered, returning empty");
@@ -268,7 +268,7 @@ Return ONLY the JSON array:`;
     // Map selections to subtasks (only include specialists that actually exist)
     const subtasks: Subtask[] = [];
     for (const sel of selections) {
-      const specialist = getSpecialistByName(sel.specialistName);
+      const specialist = await getSpecialistByName(sel.specialistName);
       if (specialist) {
         subtasks.push({
           id: crypto.randomUUID(),
@@ -295,10 +295,10 @@ Return ONLY the JSON array:`;
 /**
  * Fallback: keyword-based decomposition (original logic)
  */
-function decomposeTaskFallback(description: string): Subtask[] {
+async function decomposeTaskFallback(description: string): Promise<Subtask[]> {
   const lower = description.toLowerCase();
   const subtasks: Subtask[] = [];
-  const allSpecialists = getAllSpecialists();
+  const allSpecialists = await getAllSpecialists();
 
   // Check each specialist's capabilities against keywords in the description
   for (const specialist of allSpecialists) {
@@ -348,7 +348,7 @@ async function executeSpecialist(
   subtask: Subtask,
   originalTask: string
 ): Promise<string> {
-  const specialist = getSpecialistByName(subtask.specialistName!);
+  const specialist = await getSpecialistByName(subtask.specialistName!);
 
   // Build a dynamic prompt based on the specialist's description and capabilities
   const prompt = `You are ${subtask.specialistName}, a specialist AI agent.
