@@ -2,7 +2,13 @@ import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { Task, Subtask, TaskResult, TaskEvent } from "@/types/task";
 import { Specialist } from "@/types/specialist";
-import { taskStore } from "@/lib/task-store";
+import {
+  appendExecutionEvent,
+  completeExecution,
+  failExecution,
+  transitionExecution,
+  updateExecution,
+} from "@/services/execution";
 import { createPayment } from "@/services/payment";
 import { Payment } from "@/types/payment";
 import {
@@ -33,10 +39,7 @@ async function pushEvent(
   message: string,
   status: TaskEvent["status"]
 ) {
-  const task = taskStore.get(taskId);
-  const events = task?.events || [];
-  events.push({ type, message, status, timestamp: new Date().toISOString() });
-  await taskStore.update(taskId, { events });
+  await appendExecutionEvent(taskId, { type, message, status });
 }
 
 /**
@@ -56,8 +59,7 @@ export async function executeCoordinator(
   // Phase 1: AI-powered task decomposition
   const subtasks = await decomposeTaskWithAI(description);
 
-  await taskStore.update(taskId, {
-    status: "discovering",
+  await transitionExecution(taskId, "discovering", {
     subtasks,
   });
 
@@ -74,7 +76,7 @@ export async function executeCoordinator(
   if (estimatedTotal > effectiveCap) {
     console.warn(`[Coordinator] Spend cap exceeded: $${estimatedTotal} > $${effectiveCap}`);
     await pushEvent(taskId, "system", `Spend cap exceeded! Estimated $${estimatedTotal.toFixed(2)} exceeds cap of $${effectiveCap.toFixed(2)}. Task blocked.`, "error");
-    await taskStore.update(taskId, { status: "failed" });
+    await failExecution(taskId, `Spend cap exceeded: $${estimatedTotal.toFixed(2)} > $${effectiveCap.toFixed(2)}`);
     return;
   }
 
@@ -83,9 +85,7 @@ export async function executeCoordinator(
   console.log(`[Coordinator] AI routed to ${subtasks.length} subtask(s)`);
 
   // Phase 2: Execute each subtask with real AI
-  await taskStore.update(taskId, {
-    status: "processing",
-  });
+  await transitionExecution(taskId, "processing");
 
   const deliverables = [];
   const payments: Payment[] = [];
@@ -99,14 +99,14 @@ export async function executeCoordinator(
 
     // Update subtask status
     subtasks[i] = { ...subtask, status: "processing" };
-    await taskStore.update(taskId, { subtasks: [...subtasks] });
+    await updateExecution(taskId, { subtasks: [...subtasks] });
 
     try {
       // Check running total against spend cap BEFORE paying
       if (totalSpent + (subtask.cost || 0) > effectiveCap) {
         await pushEvent(taskId, "system", `Payment blocked: cumulative spend $${(totalSpent + (subtask.cost || 0)).toFixed(2)} would exceed cap $${effectiveCap.toFixed(2)}.`, "error");
         subtasks[i] = { ...subtask, status: "failed" };
-        await taskStore.update(taskId, { subtasks: [...subtasks] });
+        await updateExecution(taskId, { subtasks: [...subtasks] });
         continue;
       }
 
@@ -121,7 +121,7 @@ export async function executeCoordinator(
         console.warn(`[Coordinator] Payment failed for ${subtask.specialistName} — skipping execution`);
         await pushEvent(taskId, "payment", `Payment to ${subtask.specialistName} failed on-chain. Agent will not execute.`, "error");
         subtasks[i] = { ...subtask, status: "failed" };
-        await taskStore.update(taskId, { subtasks: [...subtasks] });
+        await updateExecution(taskId, { subtasks: [...subtasks] });
         continue;
       }
 
@@ -148,7 +148,7 @@ export async function executeCoordinator(
         status: "completed",
         result,
       };
-      await taskStore.update(taskId, { subtasks: [...subtasks] });
+      await updateExecution(taskId, { subtasks: [...subtasks] });
 
       deliverables.push({
         title: `${subtask.specialistName} Report`,
@@ -161,7 +161,7 @@ export async function executeCoordinator(
       console.error(`[Coordinator] Failed subtask: ${subtask.specialistName}`, error);
       await pushEvent(taskId, "system", `${subtask.specialistName} failed: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
       subtasks[i] = { ...subtask, status: "failed" };
-      await taskStore.update(taskId, { subtasks: [...subtasks] });
+      await updateExecution(taskId, { subtasks: [...subtasks] });
     }
   }
 
@@ -185,18 +185,17 @@ export async function executeCoordinator(
     "success"
   );
 
-  await taskStore.update(taskId, {
-    status: "completed",
-    totalCost: totalSpent,
-    completedAt: new Date().toISOString(),
-    result: {
+  await completeExecution(
+    taskId,
+    {
       summary: `Successfully completed ${deliverables.length} subtask(s). ${confirmedCount} on-chain payment(s) confirmed on SKALE Calypso. Total: $${totalSpent.toFixed(2)} USDC (zero gas fees).`,
       deliverables,
       paymentBreakdown,
       totalCost: totalSpent,
       totalTime: 0,
     },
-  });
+    totalSpent
+  );
 
   console.log(`[Coordinator] Task ${taskId} completed. Total spent: $${totalSpent.toFixed(2)} USDC`);
 }
