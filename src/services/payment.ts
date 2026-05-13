@@ -2,11 +2,13 @@ import { Payment } from "@/types/payment";
 import { ethers } from "ethers";
 import { getCoordinatorWallet } from "@/lib/wallet";
 import { getUSDCContract, parseUSDC, formatUSDC, withRpcFailover } from "@/lib/blockchain-config";
+import { prisma } from "@/lib/db";
+import { getSpecialistByName } from "@/services/discovery";
 
 /**
  * Map specialist name to their wallet address by deriving it from the private key in env vars.
  */
-function getSpecialistAddress(specialistName: string): string {
+function getSpecialistAddressFromPrivateKey(specialistName: string): string | undefined {
   const keyMap: Record<string, string | undefined> = {
     CodeAuditor: process.env.CODE_AUDITOR_PRIVATE_KEY,
     MarketAnalyst: process.env.MARKET_ANALYST_PRIVATE_KEY,
@@ -14,12 +16,48 @@ function getSpecialistAddress(specialistName: string): string {
   };
 
   const privateKey = keyMap[specialistName];
-  if (!privateKey) {
-    throw new Error(`No private key configured for specialist: ${specialistName}`);
-  }
+  if (!privateKey) return undefined;
 
   const wallet = new ethers.Wallet(privateKey);
   return wallet.address;
+}
+
+async function persistPayment(payment: Payment, dbSpecialistId?: string): Promise<void> {
+  if (!dbSpecialistId) return;
+
+  try {
+    await prisma.payment.upsert({
+      where: { id: payment.id },
+      create: {
+        id: payment.id,
+        taskId: payment.taskId,
+        specialistId: dbSpecialistId,
+        amount: payment.amount,
+        currency: payment.currency,
+        txHash: payment.txHash,
+        blockNumber: payment.blockNumber,
+        fromAddress: payment.from,
+        toAddress: payment.to,
+        status: payment.status,
+        protocol: payment.protocol,
+        createdAt: new Date(payment.createdAt),
+        confirmedAt: payment.confirmedAt ? new Date(payment.confirmedAt) : null,
+      },
+      update: {
+        amount: payment.amount,
+        currency: payment.currency,
+        txHash: payment.txHash,
+        blockNumber: payment.blockNumber,
+        fromAddress: payment.from,
+        toAddress: payment.to,
+        status: payment.status,
+        protocol: payment.protocol,
+        confirmedAt: payment.confirmedAt ? new Date(payment.confirmedAt) : null,
+      },
+    });
+  } catch (error) {
+    console.error(`[Payment] Failed to persist payment ${payment.id}:`, error);
+  }
 }
 
 /**
@@ -39,9 +77,16 @@ export async function createPayment(
   amount: number
 ): Promise<Payment> {
   console.log(`[Payment] Creating USDC payment of $${amount} to ${specialistId}...`);
+  const specialist = await getSpecialistByName(specialistId);
+  const dbSpecialistId = specialist?.id;
 
   try {
-    const specialistAddress = getSpecialistAddress(specialistId);
+    const specialistAddress = getSpecialistAddressFromPrivateKey(specialistId)
+      ?? specialist?.walletAddress;
+
+    if (!specialistAddress || specialistAddress === "0x0000000000000000000000000000000000000000") {
+      throw new Error(`No payout wallet configured for specialist: ${specialistId}`);
+    }
 
     // Use RPC failover for the actual blockchain operations
     const result = await withRpcFailover(async (provider) => {
@@ -105,6 +150,7 @@ export async function createPayment(
       confirmedAt: new Date().toISOString(),
     };
 
+    await persistPayment(payment, dbSpecialistId);
     return payment;
   } catch (error) {
     console.error("[Payment] Error creating payment:", error);
@@ -122,6 +168,7 @@ export async function createPayment(
       createdAt: new Date().toISOString(),
     };
 
+    await persistPayment(payment, dbSpecialistId);
     return payment;
   }
 }

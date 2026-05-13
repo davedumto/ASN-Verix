@@ -9,7 +9,7 @@ export async function GET(
   const { id } = await params;
 
   // Retrieve task from shared store
-  const task = taskStore.get(id);
+  const task = await taskStore.getById(id);
 
   if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });

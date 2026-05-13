@@ -1,42 +1,71 @@
+import { prisma } from "@/lib/db";
+
 /**
  * Reputation Service
  *
- * Tracks specialist quality scores:
- * - Updated after each completed task
- * - Weighted average of all ratings
- * - Used by coordinator for specialist selection
+ * Tracks specialist quality scores in PostgreSQL. The service keeps the simple
+ * weighted-average model used by the MVP, but Prisma is now the durable source
+ * of truth instead of an in-memory object.
  */
 
-interface ReputationEntry {
+export interface ReputationEntry {
   score: number;
   totalRatings: number;
 }
 
-// In-memory store for MVP
-const scores: Record<string, ReputationEntry> = {
-  specialist_code_auditor: { score: 95, totalRatings: 142 },
-  specialist_market_analyst: { score: 88, totalRatings: 98 },
-  specialist_creative_writer: { score: 92, totalRatings: 215 },
-};
+export async function getReputation(specialistId: string): Promise<ReputationEntry> {
+  const reputation = await prisma.reputation.findUnique({
+    where: { specialistId },
+  });
 
-export function getReputation(specialistId: string): ReputationEntry {
-  return scores[specialistId] || { score: 50, totalRatings: 0 };
+  return reputation
+    ? { score: reputation.score, totalRatings: reputation.totalRatings }
+    : { score: 50, totalRatings: 0 };
 }
 
-export function updateReputation(
+export async function updateReputation(
   specialistId: string,
   rating: number
-): ReputationEntry {
-  const current = getReputation(specialistId);
+): Promise<ReputationEntry> {
+  const current = await getReputation(specialistId);
   const newTotal = current.totalRatings + 1;
   const newScore = Math.round(
     (current.score * current.totalRatings + rating) / newTotal
   );
 
-  scores[specialistId] = { score: newScore, totalRatings: newTotal };
-  return scores[specialistId];
+  const reputation = await prisma.reputation.upsert({
+    where: { specialistId },
+    create: {
+      specialistId,
+      score: newScore,
+      totalRatings: newTotal,
+    },
+    update: {
+      score: newScore,
+      totalRatings: newTotal,
+    },
+  });
+
+  await prisma.specialist.updateMany({
+    where: { id: specialistId },
+    data: {
+      reputation: reputation.score,
+      totalJobs: reputation.totalRatings,
+    },
+  });
+
+  return {
+    score: reputation.score,
+    totalRatings: reputation.totalRatings,
+  };
 }
 
-export function getAllReputations(): Record<string, ReputationEntry> {
-  return { ...scores };
+export async function getAllReputations(): Promise<Record<string, ReputationEntry>> {
+  const reputations = await prisma.reputation.findMany();
+  return Object.fromEntries(
+    reputations.map((r) => [
+      r.specialistId,
+      { score: r.score, totalRatings: r.totalRatings },
+    ])
+  );
 }

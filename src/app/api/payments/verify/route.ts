@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifyPayment } from "@/services/payment";
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,11 +13,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // TODO: Verify transaction on SKALE chain
+    const verified = await verifyPayment(txHash);
+
     return NextResponse.json({
       txHash,
-      verified: true,
-      blockNumber: 12345,
+      verified,
       network: "skale-testnet",
     });
   } catch (error) {

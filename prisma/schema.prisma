@@ -48,6 +48,9 @@ model Specialist {
   reputation    Int      @default(50)
   totalJobs     Int      @default(0)
   status        String   @default("online")
+  aiModel       String?  @default("openai")
+  apiKey        String?
+  apiKeyMasked  String?
   createdAt     DateTime @default(now())
 
   subtasks Subtask[]
