@@ -412,6 +412,19 @@ function ResultCard({ result }: { result: TaskResult }) {
                                                 </a>
                                             </div>
                                         )}
+                                        {p.agentVersion !== undefined && (
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-ink-muted">Agent version</span>
+                                                <span className="text-ink-secondary">
+                                                    v{p.agentVersion}
+                                                    {p.versionHash && (
+                                                        <span className="text-ink-muted ml-1" title={p.versionHash}>
+                                                            · {p.versionHash.slice(0, 8)}
+                                                        </span>
+                                                    )}
+                                                </span>
+                                            </div>
+                                        )}
                                         <div className="flex items-center justify-between">
                                             <span className="text-ink-muted">Gas</span>
                                             <span className="text-success">$0.00 (gasless)</span>

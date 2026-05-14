@@ -28,6 +28,9 @@ export interface Subtask {
   status: TaskStatus;
   cost?: number;
   result?: string;
+  agentVersionId?: string;
+  agentVersion?: number;
+  versionHash?: string;
 }
 
 export interface TaskResult {
@@ -52,6 +55,8 @@ export interface PaymentItem {
   from?: string;
   to?: string;
   status: "pending" | "confirmed" | "failed";
+  agentVersion?: number;
+  versionHash?: string;
 }
 
 export interface TaskEvent {
