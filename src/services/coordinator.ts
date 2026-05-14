@@ -17,17 +17,18 @@ import {
   getAllSpecialists,
 } from "@/services/discovery";
 import { decrypt } from "@/lib/encryption";
+import { env } from "@/lib/env";
 
 const EXPLORER_URL = "https://staging-utter-unripe-menkar.explorer.staging-v3.skalenodes.com";
 
 // Claude for code analysis (superior at code understanding)
 const anthropic = new Anthropic({
-  apiKey: process.env.CLAUDE_API_KEY,
+  apiKey: env.CLAUDE_API_KEY,
 });
 
 // OpenAI for writing and general analysis
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: env.OPENAI_API_KEY,
 });
 
 /**

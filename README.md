@@ -80,23 +80,48 @@ npm install
 
 ### 2. Configure environment
 
-Copy `.env.local.example` to `.env.local` and fill in:
+The app supports three modes controlled by `APP_MODE` (auto-detected when not set):
 
-```env
-# AI APIs (optional - falls back to mock)
-CLAUDE_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-proj-...
+| Mode | Auto-detected when | DATABASE_URL | ENCRYPTION_KEY | Wallet keys | AI keys |
+|---|---|---|---|---|---|
+| `demo` | no `DATABASE_URL` in env | — | — | — | — |
+| `local` | `DATABASE_URL` set, `NODE_ENV≠production` | required | optional | optional | optional |
+| `production` | `NODE_ENV=production` | required | **required** | **required** | optional |
 
-# SKALE Network
-SKALE_RPC_URL=https://974399131.rpc.thirdweb.com
-USDC_CONTRACT_ADDRESS=0x4E2B3DD08B71F45Bb4bcfAE425D697c650e4212B
-
-# Wallets (coordinator + 3 specialists)
-COORDINATOR_PRIVATE_KEY=0x...
-CODE_AUDITOR_PRIVATE_KEY=0x...
-MARKET_ANALYST_PRIVATE_KEY=0x...
-CREATIVE_WRITER_PRIVATE_KEY=0x...
+**Quick start (no external services needed):**
+```bash
+APP_MODE=demo npm run dev
 ```
+All blockchain and AI calls are mocked. Components that use mocks are clearly labeled `[demo mode]` in the activity feed.
+
+**Full local setup:** copy `.env.local.example` to `.env.local` and fill in:
+
+```bash
+cp .env.local.example .env.local
+```
+
+Key variables (see `.env.local.example` for the full list with comments):
+
+| Variable | demo | local | production | Description |
+|---|---|---|---|---|
+| `DATABASE_URL` | — | required | required | PostgreSQL connection string |
+| `ENCRYPTION_KEY` | — | optional | **required** | 32-byte hex key for field encryption |
+| `COORDINATOR_PRIVATE_KEY` | — | optional | required | Pays specialist agents on SKALE |
+| `CODE_AUDITOR_PRIVATE_KEY` | — | optional | required | CodeAuditor agent wallet |
+| `MARKET_ANALYST_PRIVATE_KEY` | — | optional | required | MarketAnalyst agent wallet |
+| `CREATIVE_WRITER_PRIVATE_KEY` | — | optional | required | CreativeWriter agent wallet |
+| `CLAUDE_API_KEY` | — | optional | optional | Falls back to mock |
+| `OPENAI_API_KEY` | — | optional | optional | Falls back to mock |
+| `SKALE_RPC_URL` | — | optional | optional | Defaults to SKALE testnet |
+| `USDC_CONTRACT_ADDRESS` | — | optional | optional | Defaults to testnet USDC |
+| `THIRDWEB_SECRET_KEY` | — | — | optional | Higher RPC rate limits |
+
+Generate an `ENCRYPTION_KEY` for production:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+> **Note:** `npm run build` runs `prisma generate` first, which reads `DATABASE_URL` from `.env.local` via `prisma.config.ts`. Set `DATABASE_URL` (or run `APP_MODE=demo npm run build`) before building.
 
 ### 3. Get testnet tokens
 

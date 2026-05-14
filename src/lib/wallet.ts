@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import { getProvider, getUSDCContract, formatUSDC, withRpcFailover } from "./blockchain-config";
+import { env } from "@/lib/env";
 
 /**
  * Server-side wallet management for the coordinator
@@ -10,9 +11,12 @@ import { getProvider, getUSDCContract, formatUSDC, withRpcFailover } from "./blo
  * Get coordinator wallet address (does not need RPC)
  */
 export function getCoordinatorAddress(): string {
-    const privateKey = process.env.COORDINATOR_PRIVATE_KEY;
+    const privateKey = env.COORDINATOR_PRIVATE_KEY;
     if (!privateKey) {
-        throw new Error("COORDINATOR_PRIVATE_KEY not configured in environment variables");
+        throw new Error(
+            "[wallet] COORDINATOR_PRIVATE_KEY is not set.\n" +
+            "  Add it to .env.local, or use APP_MODE=demo to run without a wallet."
+        );
     }
     const wallet = new ethers.Wallet(privateKey);
     return wallet.address;
@@ -22,9 +26,12 @@ export function getCoordinatorAddress(): string {
  * Get coordinator wallet connected to a specific provider
  */
 export function getCoordinatorWallet(provider?: ethers.Provider): ethers.Wallet {
-    const privateKey = process.env.COORDINATOR_PRIVATE_KEY;
+    const privateKey = env.COORDINATOR_PRIVATE_KEY;
     if (!privateKey) {
-        throw new Error("COORDINATOR_PRIVATE_KEY not configured in environment variables");
+        throw new Error(
+            "[wallet] COORDINATOR_PRIVATE_KEY is not set.\n" +
+            "  Add it to .env.local, or use APP_MODE=demo to run without a wallet."
+        );
     }
     const p = provider || getProvider();
     return new ethers.Wallet(privateKey, p);
@@ -38,7 +45,7 @@ export async function getCoordinatorUSDCBalance(): Promise<string> {
     console.log(`[Wallet] Fetching USDC balance for ${address}...`);
 
     return withRpcFailover(async (provider) => {
-        const wallet = new ethers.Wallet(process.env.COORDINATOR_PRIVATE_KEY!, provider);
+        const wallet = new ethers.Wallet(env.COORDINATOR_PRIVATE_KEY!, provider);
         const usdcContract = getUSDCContract(wallet);
         const balance = await usdcContract.balanceOf(address);
         const formatted = formatUSDC(balance);
