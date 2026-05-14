@@ -1,4 +1,5 @@
 import { ethers } from "ethers";
+import { env } from "@/lib/env";
 
 /**
  * SKALE Network Configuration
@@ -7,9 +8,7 @@ import { ethers } from "ethers";
 export const SKALE_CONFIG = {
     chainId: 974399131,
     chainName: "SKALE Calypso Hub Testnet",
-    rpcUrl:
-        process.env.SKALE_RPC_URL ||
-        "https://testnet.skalenodes.com/v1/giant-half-dual-testnet",
+    rpcUrl: env.SKALE_RPC_URL,
     blockExplorer: "https://staging-utter-unripe-menkar.explorer.staging-v3.skalenodes.com",
     nativeCurrency: {
         name: "sFUEL",
@@ -20,10 +19,9 @@ export const SKALE_CONFIG = {
 
 /**
  * USDC Token Configuration on SKALE Testnet
- * Note: This is a placeholder - update with actual SKALE testnet USDC address
  */
 export const USDC_CONFIG = {
-    address: process.env.USDC_CONTRACT_ADDRESS || "0x4E2B3DD08B71F45Bb4bcfAE425D697c650e4212B",
+    address: env.USDC_CONTRACT_ADDRESS,
     decimals: 6,
     symbol: "USDC",
     // Standard ERC-20 ABI (only the functions we need)
@@ -42,13 +40,14 @@ export const USDC_CONFIG = {
  * Thirdweb with secret key (authenticated, no rate limits) → SKALE native → Thirdweb public.
  */
 const THIRDWEB_RPC = "https://974399131.rpc.thirdweb.com";
+const SKALE_NATIVE_RPC = "https://testnet.skalenodes.com/v1/giant-half-dual-testnet";
 
 function getRpcEndpoints(): string[] {
-    if (process.env.SKALE_RPC_URL) {
-        return [process.env.SKALE_RPC_URL, "https://testnet.skalenodes.com/v1/giant-half-dual-testnet", THIRDWEB_RPC];
+    if (env.SKALE_RPC_URL !== SKALE_NATIVE_RPC) {
+        // Custom RPC configured — use it first, then fall back
+        return [env.SKALE_RPC_URL, SKALE_NATIVE_RPC, THIRDWEB_RPC];
     }
-    // Prefer Thirdweb authenticated if secret key is available
-    return [THIRDWEB_RPC, "https://testnet.skalenodes.com/v1/giant-half-dual-testnet"];
+    return [THIRDWEB_RPC, SKALE_NATIVE_RPC];
 }
 
 /**
@@ -63,7 +62,7 @@ export function getProvider(rpcUrl?: string): ethers.JsonRpcProvider {
     fetchReq.timeout = 30_000;
 
     // Attach Thirdweb secret key header for authenticated (no rate-limit) access
-    const secretKey = process.env.THIRDWEB_SECRET_KEY;
+    const secretKey = env.THIRDWEB_SECRET_KEY;
     if (secretKey && url.includes("thirdweb.com")) {
         fetchReq.setHeader("x-secret-key", secretKey);
     }

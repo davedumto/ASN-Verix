@@ -1,17 +1,15 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
+import { env } from "@/lib/env";
 
 /**
- * AES-256-GCM encryption for API keys.
- * Uses a server-side secret from ENCRYPTION_KEY env var (or falls back to JWT_SECRET).
+ * AES-256-GCM encryption for API keys stored in the database.
+ * Key source: env.ENCRYPTION_KEY — validated at startup (no default in production).
  */
 
 const ALGORITHM = "aes-256-gcm";
 
 function getEncryptionKey(): Buffer {
-    const secret = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || "default-dev-key-change-in-production!!";
-    // Derive a 32-byte key from the secret
-    const crypto = require("crypto");
-    return crypto.createHash("sha256").update(secret).digest();
+    return createHash("sha256").update(env.ENCRYPTION_KEY).digest();
 }
 
 export function encrypt(text: string): string {

@@ -4,15 +4,16 @@ import { getCoordinatorWallet } from "@/lib/wallet";
 import { getUSDCContract, parseUSDC, formatUSDC, withRpcFailover } from "@/lib/blockchain-config";
 import { prisma } from "@/lib/db";
 import { getSpecialistByName } from "@/services/discovery";
+import { env } from "@/lib/env";
 
 /**
  * Map specialist name to their wallet address by deriving it from the private key in env vars.
  */
 function getSpecialistAddressFromPrivateKey(specialistName: string): string | undefined {
   const keyMap: Record<string, string | undefined> = {
-    CodeAuditor: process.env.CODE_AUDITOR_PRIVATE_KEY,
-    MarketAnalyst: process.env.MARKET_ANALYST_PRIVATE_KEY,
-    CreativeWriter: process.env.CREATIVE_WRITER_PRIVATE_KEY,
+    CodeAuditor: env.CODE_AUDITOR_PRIVATE_KEY,
+    MarketAnalyst: env.MARKET_ANALYST_PRIVATE_KEY,
+    CreativeWriter: env.CREATIVE_WRITER_PRIVATE_KEY,
   };
 
   const privateKey = keyMap[specialistName];
