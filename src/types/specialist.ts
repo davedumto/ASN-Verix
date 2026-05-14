@@ -10,6 +10,7 @@ export interface Specialist {
   priceUsdc: number;
   reputation: number;
   totalJobs: number;
+  verifiedJobs?: number;  // receipt-backed verified completions from ReputationEvent
   status: "online" | "offline" | "busy";
   aiModel?: "claude" | "openai";
   proofPolicy: ProofPolicy;

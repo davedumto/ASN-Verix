@@ -17,6 +17,7 @@ import {
   getAllSpecialists,
   getActiveAgentVersion,
 } from "@/services/discovery";
+import { appendReputationEvent } from "@/services/reputation";
 import { decrypt } from "@/lib/encryption";
 import { env } from "@/lib/env";
 
@@ -158,12 +159,39 @@ export async function executeCoordinator(
         specialistName: subtask.specialistName!,
       });
 
+      // Receipt-backed reputation: confirmed payment + successful execution = verified completion
+      if (subtask.specialistId || subtask.specialistName) {
+        const specialist = subtask.specialistId
+          ? { id: subtask.specialistId }
+          : await getSpecialistByName(subtask.specialistName!);
+        if (specialist?.id) {
+          appendReputationEvent(specialist.id, "verified_completion", {
+            taskId,
+            verified: true,
+            metadata: { txHash: payment.txHash, agentVersionId: subtask.agentVersionId },
+          }).catch((err) => console.warn(`[Coordinator] Reputation event failed for ${subtask.specialistName}:`, err));
+        }
+      }
+
       console.log(`[Coordinator] Completed subtask: ${subtask.specialistName}`);
     } catch (error) {
       console.error(`[Coordinator] Failed subtask: ${subtask.specialistName}`, error);
       await pushEvent(taskId, "system", `${subtask.specialistName} failed: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
       subtasks[i] = { ...subtask, status: "failed" };
       await updateExecution(taskId, { subtasks: [...subtasks] });
+
+      // Record failure in reputation
+      if (subtask.specialistId || subtask.specialistName) {
+        const specialist = subtask.specialistId
+          ? { id: subtask.specialistId }
+          : await getSpecialistByName(subtask.specialistName!);
+        if (specialist?.id) {
+          appendReputationEvent(specialist.id, "failure", {
+            taskId,
+            metadata: { error: error instanceof Error ? error.message : "Unknown error" },
+          }).catch((err) => console.warn(`[Coordinator] Reputation failure event failed for ${subtask.specialistName}:`, err));
+        }
+      }
     }
   }
 

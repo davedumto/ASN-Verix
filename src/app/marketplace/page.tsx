@@ -159,7 +159,15 @@ function AgentCard({ specialist, index }: { specialist: Specialist; index: numbe
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[10px] text-white/30 uppercase tracking-wide">Reputation</span>
-            <span className="text-[10px] text-white/30">{specialist.totalJobs} jobs</span>
+            <div className="flex items-center gap-2">
+              {(specialist.verifiedJobs ?? 0) > 0 ? (
+                <span className="flex items-center gap-1 text-[10px] text-emerald-400/70">
+                  <span className="w-1 h-1 rounded-full bg-emerald-400" />
+                  {specialist.verifiedJobs} verified
+                </span>
+              ) : null}
+              <span className="text-[10px] text-white/25">{specialist.totalJobs} total</span>
+            </div>
           </div>
           <ReputationBar score={specialist.reputation} />
         </div>
@@ -254,6 +262,7 @@ export default function MarketplacePage() {
     escrowEligible: specialists.filter((s) => s.proofPolicy === "escrow-eligible").length,
     receiptProof: specialists.filter((s) => s.proofPolicy === "receipt-proof").length,
     online: specialists.filter((s) => s.status === "online").length,
+    verifiedJobs: specialists.reduce((sum, s) => sum + (s.verifiedJobs ?? 0), 0),
   }), [specialists]);
 
   return (
@@ -305,16 +314,17 @@ export default function MarketplacePage() {
         </div>
 
         {/* Stats bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-8">
           {[
-            { label: "Total Agents", value: stats.total },
-            { label: "Online", value: stats.online },
-            { label: "Receipt Proof", value: stats.receiptProof },
-            { label: "Escrow Eligible", value: stats.escrowEligible },
+            { label: "Total Agents", value: stats.total, highlight: false },
+            { label: "Online", value: stats.online, highlight: false },
+            { label: "Verified Jobs", value: stats.verifiedJobs, highlight: stats.verifiedJobs > 0 },
+            { label: "Receipt Proof", value: stats.receiptProof, highlight: false },
+            { label: "Escrow Eligible", value: stats.escrowEligible, highlight: false },
           ].map((stat) => (
-            <div key={stat.label} className="bg-white/[0.04] border border-white/8 rounded-xl px-4 py-3">
-              <div className="text-xs text-white/30 mb-1">{stat.label}</div>
-              <div className="text-2xl font-bold font-mono">{loading ? "—" : stat.value}</div>
+            <div key={stat.label} className={`border rounded-xl px-4 py-3 ${stat.highlight ? "bg-emerald-500/5 border-emerald-500/20" : "bg-white/4 border-white/8"}`}>
+              <div className={`text-xs mb-1 ${stat.highlight ? "text-emerald-400/70" : "text-white/30"}`}>{stat.label}</div>
+              <div className={`text-2xl font-bold font-mono ${stat.highlight ? "text-emerald-400" : ""}`}>{loading ? "—" : stat.value}</div>
             </div>
           ))}
         </div>
