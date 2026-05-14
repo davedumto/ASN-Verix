@@ -1,6 +1,7 @@
 import { CreateTaskRequest, CreateTaskResponse, Task } from "@/types/task";
 import { Specialist, SpecialistProfile } from "@/types/specialist";
 import { WalletBalance } from "@/types/payment";
+import { ExecutionTraceEvent, ExecutionReceipt } from "@/types/trace";
 
 const API_URL = process.env.NEXT_PUBLIC_APP_URL || "";
 
@@ -137,4 +138,18 @@ export async function deleteTask(id: string): Promise<void> {
   return authedRequest(`/api/tasks?id=${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
+}
+
+export async function getExecutionTrace(taskId: string): Promise<{
+  taskId: string;
+  status: string;
+  eventCount: number;
+  traceRoot: string | null;
+  events: ExecutionTraceEvent[];
+}> {
+  return request(`/api/executions/${encodeURIComponent(taskId)}/trace`);
+}
+
+export async function getExecutionReceipt(taskId: string): Promise<ExecutionReceipt> {
+  return request(`/api/executions/${encodeURIComponent(taskId)}/receipt`);
 }
