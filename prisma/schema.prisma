@@ -20,6 +20,7 @@ model Task {
 
   subtasks    Subtask[]
   payments    Payment[]
+  jobs        Job[]
 }
 
 model Subtask {
@@ -84,4 +85,38 @@ model Reputation {
   score        Int    @default(50)
   totalRatings Int    @default(0)
   updatedAt    DateTime @updatedAt
+}
+
+/**
+ * Durable job boundary for long-running background work.
+ *
+ * A Job wraps a single unit of background execution (coordinator run, proof
+ * generation, escrow sync) and survives process restarts. Status transitions:
+ *   queued → running → completed
+ *                    ↘ failed (retried up to maxAttempts)
+ *
+ * Atomic claiming: UPDATE WHERE status='queued' prevents double-execution
+ * when two processes race to start the same job.
+ */
+model Job {
+  id          String    @id @default(cuid())
+  /// JobType: "coordinator_execution" | "proof_generation" | "escrow_sync"
+  type        String
+  /// JobStatus: "queued" | "running" | "completed" | "failed"
+  status      String    @default("queued")
+  taskId      String?
+  payload     Json
+  result      Json?
+  errorMsg    String?
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  task Task? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([taskId])
+  @@index([status, type])
 }

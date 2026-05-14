@@ -37,10 +37,11 @@ export async function POST(request: NextRequest) {
     const sessionId = existingSession ?? crypto.randomUUID();
 
     const { task, estimate } = await createExecution(body, sessionId);
-    await startExecution(task, executeCoordinator);
+    const jobId = await startExecution(task, executeCoordinator);
 
     const responseBody: CreateTaskResponse = {
       task_id: task.id,
+      job_id: jobId,
       estimated_cost: estimate.estimated_cost,
       subtasks: estimate.subtasks,
     };

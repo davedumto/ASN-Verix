@@ -7,6 +7,12 @@ import {
   TaskResult,
   TaskStatus,
 } from "@/types/task";
+import {
+  completeJob,
+  enqueueJob,
+  failJob,
+  startJob,
+} from "@/services/jobs";
 
 type ExecutionTransition = {
   from: TaskStatus[];
@@ -110,17 +116,60 @@ export async function createExecution(
   };
 }
 
+/**
+ * Enqueue and immediately start a coordinator execution job.
+ *
+ * The job row is written to the database BEFORE the runner is invoked, so a
+ * process crash or serverless timeout cannot make the in-flight task
+ * disappear silently. The job is claimed atomically (queued → running) before
+ * the runner fires, preventing double-execution on concurrent requests.
+ *
+ * Returns the durable job ID so the caller can expose it to clients for
+ * status polling.
+ */
 export async function startExecution(
   task: Task,
   runner: (taskId: string, description: string, spendCap?: number) => Promise<void>
-): Promise<void> {
-  runner(task.id, task.description, task.spendCap).catch(async (error) => {
-    console.error(`Task ${task.id} failed:`, error);
-    await failExecution(
-      task.id,
-      error instanceof Error ? error.message : "Unknown execution failure"
-    );
-  });
+): Promise<string> {
+  const payload: Record<string, unknown> = {
+    taskId: task.id,
+    description: task.description,
+    spendCap: task.spendCap ?? null,
+  };
+
+  // Enqueue is idempotent: returns existing non-failed job if one exists
+  const job = await enqueueJob("coordinator_execution", payload, task.id);
+
+  // If the job is already running or done, another caller got there first
+  if (job.status === "running" || job.status === "completed") {
+    console.log(`[Execution] Job ${job.id} already ${job.status} — skipping duplicate start`);
+    return job.id;
+  }
+
+  // Atomic claim: only one concurrent caller wins the queued → running race
+  const claimed = await startJob(job.id);
+  if (!claimed) {
+    console.log(`[Execution] Job ${job.id} claimed by concurrent request — skipping`);
+    return job.id;
+  }
+
+  // Run in the background; the job row tracks state durably
+  void (async () => {
+    try {
+      await runner(task.id, task.description, task.spendCap);
+      await completeJob(job.id, { taskId: task.id });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown execution failure";
+      console.error(`[Execution] Task ${task.id} runner failed:`, error);
+      const willRetry = await failJob(job.id, msg);
+      if (!willRetry) {
+        // Job has exhausted all retries — surface the failure on the task
+        await failExecution(task.id, msg);
+      }
+    }
+  })();
+
+  return job.id;
 }
 
 export async function transitionExecution(
