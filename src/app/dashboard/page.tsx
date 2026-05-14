@@ -6,6 +6,7 @@ import Link from "next/link";
 import ChatMessage, { ChatMessageData, ThinkingStep } from "@/components/ChatMessage";
 import ChatSidebar from "@/components/ChatSidebar";
 import { Task, TaskStatus, TaskResult, Subtask, TaskEvent } from "@/types/task";
+import { ExecutionTraceEvent } from "@/types/trace";
 import {
   submitTask,
   getTaskStatus,
@@ -59,6 +60,26 @@ export default function Dashboard() {
 
   // Server event tracking
   const syncedEventsCount = useRef(0);
+
+  // Map a structured trace event to a ThinkingStep
+  const traceEventToThinkingStep = (e: ExecutionTraceEvent): ThinkingStep => {
+    const deriveStatus = (type: string): ThinkingStep["status"] => {
+      if (type.includes("failed") || type.includes("exceeded")) return "error";
+      if (type.includes("confirmed") || type.includes("completed")) return "success";
+      if (type.includes("initiated") || type.includes("invoked") || type.includes("assigned")) return "pending";
+      return "info";
+    };
+    return {
+      message: e.displayMessage,
+      status: deriveStatus(e.eventType),
+      type: e.actor === "payment" ? "payment" : e.actor === "coordinator" ? "coordinator" : "specialist",
+      timestamp: e.timestamp,
+      actor: e.actor,
+      eventType: e.eventType,
+      eventHash: e.eventHash,
+      sequence: e.sequence,
+    };
+  };
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -163,7 +184,7 @@ export default function Dashboard() {
     []
   );
 
-  // Sync server events into the thinking block
+  // Sync legacy task events into the thinking block (fallback when no trace events)
   const syncEvents = useCallback(
     (events: TaskEvent[]) => {
       if (!events || events.length <= syncedEventsCount.current) return;
@@ -180,6 +201,22 @@ export default function Dashboard() {
         });
       }
     },
+    [addThinkingStep]
+  );
+
+  // Sync structured trace events into the thinking block (preferred over legacy events)
+  const syncTraceEvents = useCallback(
+    (traceEvents: ExecutionTraceEvent[]) => {
+      if (!traceEvents || traceEvents.length <= syncedEventsCount.current) return;
+
+      const newEvents = traceEvents.slice(syncedEventsCount.current);
+      syncedEventsCount.current = traceEvents.length;
+
+      for (const event of newEvents) {
+        addThinkingStep(traceEventToThinkingStep(event));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [addThinkingStep]
   );
 
@@ -235,7 +272,11 @@ export default function Dashboard() {
 
         if (task.subtasks) setSubtasks(task.subtasks);
         if (task.totalCost) setTotalCost(task.totalCost);
-        if (task.events) syncEvents(task.events);
+        if (task.traceEvents && task.traceEvents.length > 0) {
+          syncTraceEvents(task.traceEvents);
+        } else if (task.events) {
+          syncEvents(task.events);
+        }
 
         if (task.result) {
           setResult(task.result);
@@ -260,7 +301,7 @@ export default function Dashboard() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [taskId, addMessage, syncEvents, fetchWalletBalance]);
+  }, [taskId, addMessage, syncEvents, syncTraceEvents, fetchWalletBalance]);
 
   // Step 1: User submits → show confirmation
   const handleRequestSubmit = () => {
@@ -368,8 +409,25 @@ export default function Dashboard() {
         timestamp: task.createdAt,
       });
 
-      // Add events as a thinking block
-      if (task.events && task.events.length > 0) {
+      // Add events as a thinking block — prefer structured trace events over legacy blob
+      const hasTrace = task.traceEvents && task.traceEvents.length > 0;
+      const hasLegacy = task.events && task.events.length > 0;
+
+      if (hasTrace && task.traceEvents) {
+        const thinkingSteps: ThinkingStep[] = task.traceEvents.map(traceEventToThinkingStep);
+        const firstTime = new Date(task.traceEvents[0].timestamp).getTime();
+        const lastTime = new Date(task.traceEvents[task.traceEvents.length - 1].timestamp).getTime();
+        const duration = (lastTime - firstTime) / 1000;
+
+        rebuiltMessages.push({
+          id: crypto.randomUUID(),
+          role: "thinking",
+          content: "",
+          timestamp: task.traceEvents[0].timestamp,
+          thinkingSteps,
+          thinkingDuration: duration > 0 ? duration : undefined,
+        });
+      } else if (hasLegacy && task.events) {
         const thinkingSteps: ThinkingStep[] = task.events.map((e) => ({
           message: e.message,
           status: e.status,
@@ -377,7 +435,6 @@ export default function Dashboard() {
           timestamp: e.timestamp,
         }));
 
-        // Calculate duration from first to last event
         const firstTime = new Date(task.events[0].timestamp).getTime();
         const lastTime = new Date(
           task.events[task.events.length - 1].timestamp
