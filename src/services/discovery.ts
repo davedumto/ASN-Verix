@@ -1,5 +1,6 @@
+import { createHash } from "crypto";
 import { prisma } from "@/lib/db";
-import { Specialist } from "@/types/specialist";
+import { AgentVersion, ProofPolicy, Specialist } from "@/types/specialist";
 
 /**
  * Discovery Service
@@ -12,45 +13,58 @@ const DEFAULT_SPECIALISTS: Specialist[] = [
   {
     id: "specialist_code_auditor",
     name: "CodeAuditor",
-    description: "Security vulnerability detection, code review, and best practices analysis",
+    description: "Security vulnerability detection, code review, and best practices analysis for smart contracts and application code.",
     endpoint: "/api/specialists/code-auditor/execute",
     walletAddress: "0x0000000000000000000000000000000000000001",
-    capabilities: ["security-analysis", "code-review", "vulnerability-detection"],
+    capabilities: ["security-analysis", "code-review", "vulnerability-detection", "smart-contract-audit"],
     priceUsdc: 1.0,
     reputation: 95,
     totalJobs: 142,
     status: "online",
     aiModel: "claude",
+    proofPolicy: "receipt-proof",
+    currentVersion: 1,
   },
   {
     id: "specialist_market_analyst",
     name: "MarketAnalyst",
-    description: "Financial analysis, market research, competitive intelligence, and investment analysis",
+    description: "Financial analysis, market research, competitive intelligence, and investment analysis for DeFi and traditional markets.",
     endpoint: "/api/specialists/market-analyst/execute",
     walletAddress: "0x0000000000000000000000000000000000000002",
-    capabilities: ["market-research", "financial-analysis", "competitive-intelligence"],
+    capabilities: ["market-research", "financial-analysis", "competitive-intelligence", "defi-analytics"],
     priceUsdc: 0.75,
     reputation: 88,
     totalJobs: 98,
     status: "online",
     aiModel: "openai",
+    proofPolicy: "trace-only",
+    currentVersion: 1,
   },
   {
     id: "specialist_creative_writer",
     name: "CreativeWriter",
-    description: "Polished business writing, reports, investment memos, and professional documents",
+    description: "Polished business writing, reports, investment memos, whitepapers, and professional documents with structured reasoning.",
     endpoint: "/api/specialists/creative-writer/execute",
     walletAddress: "0x0000000000000000000000000000000000000003",
-    capabilities: ["creative-writing", "report-writing", "business-documents"],
+    capabilities: ["creative-writing", "report-writing", "business-documents", "whitepaper-drafting"],
     priceUsdc: 0.5,
     reputation: 92,
     totalJobs: 215,
     status: "online",
     aiModel: "openai",
+    proofPolicy: "escrow-eligible",
+    currentVersion: 1,
   },
 ];
 
 let seedPromise: Promise<void> | null = null;
+
+// ── Mapping helpers ────────────────────────────────────────────────────────────
+
+function toProofPolicy(raw: string | null | undefined): ProofPolicy {
+  if (raw === "receipt-proof" || raw === "escrow-eligible") return raw;
+  return "trace-only";
+}
 
 function toSpecialist(row: {
   id: string;
@@ -67,6 +81,8 @@ function toSpecialist(row: {
   apiKey: string | null;
   apiKeyMasked: string | null;
   ownerId?: string | null;
+  proofPolicy?: string | null;
+  currentVersion?: number | null;
 }): Specialist {
   return {
     id: row.id,
@@ -83,15 +99,72 @@ function toSpecialist(row: {
     apiKey: row.apiKey ?? undefined,
     apiKeyMasked: row.apiKeyMasked ?? undefined,
     ownerId: row.ownerId ?? undefined,
+    proofPolicy: toProofPolicy(row.proofPolicy),
+    currentVersion: row.currentVersion ?? 1,
   };
 }
+
+function toAgentVersion(row: {
+  id: string;
+  specialistId: string;
+  version: number;
+  name: string;
+  description: string;
+  walletAddress: string;
+  capabilities: string[];
+  priceUsdc: unknown;
+  proofPolicy: string;
+  aiModel: string;
+  versionHash: string;
+  createdAt: Date;
+}): AgentVersion {
+  return {
+    id: row.id,
+    specialistId: row.specialistId,
+    version: row.version,
+    name: row.name,
+    description: row.description,
+    walletAddress: row.walletAddress,
+    capabilities: row.capabilities,
+    priceUsdc: Number(row.priceUsdc),
+    proofPolicy: toProofPolicy(row.proofPolicy),
+    aiModel: row.aiModel,
+    versionHash: row.versionHash,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/**
+ * Deterministic version hash so receipts can reference the exact agent
+ * metadata used at invocation time.
+ */
+export function computeVersionHash(
+  name: string,
+  version: number,
+  priceUsdc: number,
+  walletAddress: string,
+  capabilities: string[],
+  proofPolicy: string
+): string {
+  const payload = [
+    name,
+    String(version),
+    priceUsdc.toFixed(6),
+    walletAddress.toLowerCase(),
+    [...capabilities].sort().join(","),
+    proofPolicy,
+  ].join("|");
+  return createHash("sha256").update(payload).digest("hex");
+}
+
+// ── Seeding ────────────────────────────────────────────────────────────────────
 
 async function ensureSeeded(): Promise<void> {
   if (seedPromise) return seedPromise;
 
   seedPromise = (async () => {
     for (const specialist of DEFAULT_SPECIALISTS) {
-      await prisma.specialist.upsert({
+      const row = await prisma.specialist.upsert({
         where: { name: specialist.name },
         create: {
           id: specialist.id,
@@ -105,6 +178,8 @@ async function ensureSeeded(): Promise<void> {
           totalJobs: specialist.totalJobs,
           status: specialist.status,
           aiModel: specialist.aiModel ?? "openai",
+          proofPolicy: specialist.proofPolicy,
+          currentVersion: specialist.currentVersion,
         },
         update: {
           description: specialist.description,
@@ -115,8 +190,39 @@ async function ensureSeeded(): Promise<void> {
           totalJobs: specialist.totalJobs,
           status: specialist.status,
           aiModel: specialist.aiModel ?? "openai",
+          proofPolicy: specialist.proofPolicy,
         },
       });
+
+      // Seed version snapshot if none exists for v1
+      const existingVersion = await prisma.agentVersion.findUnique({
+        where: { specialistId_version: { specialistId: row.id, version: 1 } },
+      });
+
+      if (!existingVersion) {
+        const versionHash = computeVersionHash(
+          specialist.name,
+          1,
+          specialist.priceUsdc,
+          specialist.walletAddress,
+          specialist.capabilities,
+          specialist.proofPolicy
+        );
+        await prisma.agentVersion.create({
+          data: {
+            specialistId: row.id,
+            version: 1,
+            name: specialist.name,
+            description: specialist.description,
+            walletAddress: specialist.walletAddress,
+            capabilities: specialist.capabilities,
+            priceUsdc: specialist.priceUsdc,
+            proofPolicy: specialist.proofPolicy,
+            aiModel: specialist.aiModel ?? "openai",
+            versionHash,
+          },
+        });
+      }
 
       await prisma.reputation.upsert({
         where: { specialistId: specialist.id },
@@ -135,6 +241,8 @@ async function ensureSeeded(): Promise<void> {
 
   return seedPromise;
 }
+
+// ── Public API ────────────────────────────────────────────────────────────────
 
 export async function getAllSpecialists(): Promise<Specialist[]> {
   await ensureSeeded();
@@ -200,6 +308,8 @@ export async function registerSpecialist(
       apiKey: specialist.apiKey,
       apiKeyMasked: specialist.apiKeyMasked,
       ownerId,
+      proofPolicy: specialist.proofPolicy,
+      currentVersion: 1,
     },
     update: {
       description: specialist.description,
@@ -213,7 +323,41 @@ export async function registerSpecialist(
       aiModel: specialist.aiModel ?? "openai",
       apiKey: specialist.apiKey,
       apiKeyMasked: specialist.apiKeyMasked,
+      proofPolicy: specialist.proofPolicy,
     },
+  });
+
+  // Create an immutable version snapshot
+  const nextVersion = (row.currentVersion ?? 0) + 1;
+  const versionHash = computeVersionHash(
+    row.name,
+    nextVersion,
+    Number(row.priceUsdc),
+    row.walletAddress,
+    row.capabilities,
+    row.proofPolicy
+  );
+
+  await prisma.agentVersion.upsert({
+    where: { specialistId_version: { specialistId: row.id, version: nextVersion } },
+    create: {
+      specialistId: row.id,
+      version: nextVersion,
+      name: row.name,
+      description: row.description,
+      walletAddress: row.walletAddress,
+      capabilities: row.capabilities,
+      priceUsdc: row.priceUsdc,
+      proofPolicy: row.proofPolicy,
+      aiModel: row.aiModel ?? "openai",
+      versionHash,
+    },
+    update: {},
+  });
+
+  await prisma.specialist.update({
+    where: { id: row.id },
+    data: { currentVersion: nextVersion },
   });
 
   await prisma.reputation.upsert({
@@ -229,7 +373,7 @@ export async function registerSpecialist(
     },
   });
 
-  return toSpecialist(row);
+  return toSpecialist({ ...row, currentVersion: nextVersion });
 }
 
 export async function removeSpecialist(id: string): Promise<{ found: boolean; ownerId?: string }> {
@@ -243,4 +387,30 @@ export async function removeSpecialist(id: string): Promise<{ found: boolean; ow
   });
 
   return { found: true, ownerId: row.ownerId ?? undefined };
+}
+
+export async function getAgentVersions(specialistId: string): Promise<AgentVersion[]> {
+  const rows = await prisma.agentVersion.findMany({
+    where: { specialistId },
+    orderBy: { version: "desc" },
+  });
+  return rows.map(toAgentVersion);
+}
+
+export async function getActiveAgentVersion(specialistId: string): Promise<AgentVersion | null> {
+  const specialist = await prisma.specialist.findUnique({
+    where: { id: specialistId },
+    select: { currentVersion: true },
+  });
+  if (!specialist) return null;
+
+  const row = await prisma.agentVersion.findUnique({
+    where: {
+      specialistId_version: {
+        specialistId,
+        version: specialist.currentVersion,
+      },
+    },
+  });
+  return row ? toAgentVersion(row) : null;
 }

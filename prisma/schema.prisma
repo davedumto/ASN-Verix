@@ -32,32 +32,38 @@ model Subtask {
   status         String   @default("pending")
   cost           Decimal?
   result         String?
+  agentVersionId String?
   createdAt      DateTime @default(now())
   completedAt    DateTime?
 
-  task       Task       @relation(fields: [taskId], references: [id])
-  specialist Specialist? @relation(fields: [specialistId], references: [id])
+  task         Task          @relation(fields: [taskId], references: [id])
+  specialist   Specialist?   @relation(fields: [specialistId], references: [id])
+  agentVersion AgentVersion? @relation(fields: [agentVersionId], references: [id])
 }
 
 model Specialist {
-  id            String   @id @default(cuid())
-  name          String   @unique
-  description   String
-  endpoint      String
-  walletAddress String
-  capabilities  String[]
-  priceUsdc     Decimal
-  reputation    Int      @default(50)
-  totalJobs     Int      @default(0)
-  status        String   @default("online")
-  aiModel       String?  @default("openai")
-  apiKey        String?
-  apiKeyMasked  String?
-  ownerId       String?
-  createdAt     DateTime @default(now())
+  id             String   @id @default(cuid())
+  name           String   @unique
+  description    String
+  endpoint       String
+  walletAddress  String
+  capabilities   String[]
+  priceUsdc      Decimal
+  reputation     Int      @default(50)
+  totalJobs      Int      @default(0)
+  status         String   @default("online")
+  aiModel        String?  @default("openai")
+  apiKey         String?
+  apiKeyMasked   String?
+  ownerId        String?
+  /// ProofPolicy: "trace-only" | "receipt-proof" | "escrow-eligible"
+  proofPolicy    String   @default("trace-only")
+  currentVersion Int      @default(1)
+  createdAt      DateTime @default(now())
 
   subtasks Subtask[]
   payments Payment[]
+  versions AgentVersion[]
 }
 
 model Payment {
@@ -80,11 +86,64 @@ model Payment {
 }
 
 model Reputation {
-  id           String @id @default(cuid())
-  specialistId String @unique
-  score        Int    @default(50)
-  totalRatings Int    @default(0)
+  id           String   @id @default(cuid())
+  specialistId String   @unique
+  score        Int      @default(50)
+  totalRatings Int      @default(0)
   updatedAt    DateTime @updatedAt
+}
+
+/**
+ * Immutable snapshot of specialist metadata at publication time.
+ *
+ * Every time agent price, capabilities, wallet, or proof policy changes,
+ * a new version row is created. Subtasks reference the version that was
+ * active at invocation so receipts can prove the exact metadata used.
+ *
+ * versionHash is SHA-256(name|version|price|wallet|capabilities|proofPolicy)
+ * computed deterministically so it can be included in receipt hashes.
+ */
+model AgentVersion {
+  id            String   @id @default(cuid())
+  specialistId  String
+  version       Int
+  name          String
+  description   String
+  walletAddress String
+  capabilities  String[]
+  priceUsdc     Decimal
+  proofPolicy   String
+  aiModel       String
+  versionHash   String
+  createdAt     DateTime @default(now())
+
+  specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Cascade)
+  subtasks   Subtask[]
+
+  @@unique([specialistId, version])
+  @@index([specialistId])
+}
+
+/**
+ * Receipt-backed reputation events.
+ *
+ * Only verified executions affect the verified stats shown in the marketplace.
+ * Demo completions are tracked separately and labeled distinctly in the UI.
+ * The score field stores the impact (+1 success, -1 failure) for aggregation.
+ */
+model ReputationEvent {
+  id           String   @id @default(cuid())
+  specialistId String
+  taskId       String?
+  /// EventType: "verified_completion" | "demo_completion" | "failure"
+  type         String
+  score        Int
+  verified     Boolean  @default(false)
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([specialistId])
+  @@index([specialistId, verified])
 }
 
 /**

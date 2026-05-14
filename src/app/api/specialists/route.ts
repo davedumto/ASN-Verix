@@ -4,6 +4,7 @@ import {
   registerSpecialist,
   removeSpecialist,
 } from "@/services/discovery";
+import { ProofPolicy } from "@/types/specialist";
 import { encrypt, maskApiKey } from "@/lib/encryption";
 import {
   canMutate,
@@ -12,6 +13,15 @@ import {
   setSessionCookie,
   unauthorizedResponse,
 } from "@/lib/auth";
+
+const VALID_PROOF_POLICIES: ProofPolicy[] = ["trace-only", "receipt-proof", "escrow-eligible"];
+
+function toProofPolicy(raw: string | undefined): ProofPolicy {
+  if (raw && VALID_PROOF_POLICIES.includes(raw as ProofPolicy)) {
+    return raw as ProofPolicy;
+  }
+  return "trace-only";
+}
 
 export async function GET() {
   const specialists = await getAllSpecialists();
@@ -35,11 +45,27 @@ export async function POST(request: NextRequest) {
     const sessionId = existingSession ?? crypto.randomUUID();
 
     const body = await request.json();
-    const { name, description, capabilities, priceUsdc, walletAddress, aiModel, apiKey } = body;
+    const { name, description, capabilities, priceUsdc, walletAddress, aiModel, apiKey, proofPolicy } = body;
 
     if (!name || !description) {
       return NextResponse.json(
         { error: "Name and description are required" },
+        { status: 400 }
+      );
+    }
+
+    const parsedPrice = parseFloat(priceUsdc);
+    if (isNaN(parsedPrice) || parsedPrice < 0) {
+      return NextResponse.json(
+        { error: "Invalid price — must be a non-negative number" },
+        { status: 400 }
+      );
+    }
+
+    const walletAddr = walletAddress?.trim() || "0x0000000000000000000000000000000000000000";
+    if (walletAddress && !/^0x[0-9a-fA-F]{40}$/.test(walletAddr)) {
+      return NextResponse.json(
+        { error: "Invalid wallet address — must be a 0x-prefixed 20-byte hex address" },
         { status: 400 }
       );
     }
@@ -49,17 +75,19 @@ export async function POST(request: NextRequest) {
       name,
       description,
       endpoint: `/api/specialists/${name.toLowerCase().replace(/\s+/g, "-")}/execute`,
-      walletAddress: walletAddress || "0x0000000000000000000000000000000000000000",
+      walletAddress: walletAddr,
       capabilities: Array.isArray(capabilities)
         ? capabilities
         : (capabilities || "").split(",").map((c: string) => c.trim()).filter(Boolean),
-      priceUsdc: parseFloat(priceUsdc) || 0.5,
+      priceUsdc: parsedPrice || 0.5,
       reputation: 50,
       totalJobs: 0,
       status: "online" as const,
       aiModel: aiModel === "claude" ? ("claude" as const) : ("openai" as const),
       apiKey: apiKey ? encrypt(apiKey) : undefined,
       apiKeyMasked: apiKey ? maskApiKey(apiKey) : undefined,
+      proofPolicy: toProofPolicy(proofPolicy),
+      currentVersion: 1,
     };
 
     const registered = await registerSpecialist(specialist, sessionId);
