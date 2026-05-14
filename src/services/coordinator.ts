@@ -15,6 +15,7 @@ import {
   getSpecialistSummariesForRouting,
   getSpecialistByName,
   getAllSpecialists,
+  getActiveAgentVersion,
 } from "@/services/discovery";
 import { decrypt } from "@/lib/encryption";
 import { env } from "@/lib/env";
@@ -167,15 +168,30 @@ export async function executeCoordinator(
   }
 
   // Phase 3: Complete task with real payment data and audit trail
-  const paymentBreakdown = payments.map((p) => ({
-    specialist: p.specialistId,
-    amount: p.amount,
-    txHash: p.txHash || "",
-    blockNumber: p.blockNumber,
-    from: p.from,
-    to: p.to,
-    status: p.status === "confirmed" ? ("confirmed" as const) : ("failed" as const),
-  }));
+
+  // Build a lookup so payment breakdown rows include the version that was active
+  // at invocation time — this makes receipts fully self-describing.
+  const versionBySpecialist = new Map<string, { agentVersion: number; versionHash: string }>();
+  for (const s of subtasks) {
+    if (s.specialistName && s.agentVersion !== undefined && s.versionHash) {
+      versionBySpecialist.set(s.specialistName, { agentVersion: s.agentVersion, versionHash: s.versionHash });
+    }
+  }
+
+  const paymentBreakdown = payments.map((p) => {
+    const vInfo = versionBySpecialist.get(p.specialistId);
+    return {
+      specialist: p.specialistId,
+      amount: p.amount,
+      txHash: p.txHash || "",
+      blockNumber: p.blockNumber,
+      from: p.from,
+      to: p.to,
+      status: p.status === "confirmed" ? ("confirmed" as const) : ("failed" as const),
+      agentVersion: vInfo?.agentVersion,
+      versionHash: vInfo?.versionHash,
+    };
+  });
 
   const confirmedCount = payments.filter((p) => p.status === "confirmed").length;
 
@@ -270,13 +286,20 @@ Return ONLY the JSON array:`;
     for (const sel of selections) {
       const specialist = await getSpecialistByName(sel.specialistName);
       if (specialist) {
+        const activeVersion = await getActiveAgentVersion(specialist.id);
         subtasks.push({
           id: crypto.randomUUID(),
           capability: specialist.capabilities[0] || "general",
           specialistName: specialist.name,
           status: "pending",
           cost: specialist.priceUsdc,
+          agentVersionId: activeVersion?.id,
+          agentVersion: activeVersion?.version,
+          versionHash: activeVersion?.versionHash,
         });
+        if (activeVersion) {
+          console.log(`[Coordinator] Pinned ${specialist.name} to AgentVersion v${activeVersion.version} (${activeVersion.versionHash.slice(0, 8)})`);
+        }
       } else {
         console.warn(`[Coordinator] AI suggested unknown specialist: ${sel.specialistName}, skipping`);
       }
@@ -310,12 +333,16 @@ async function decomposeTaskFallback(description: string): Promise<Subtask[]> {
 
     const matched = keywords.some((kw) => kw.length > 3 && lower.includes(kw));
     if (matched) {
+      const activeVersion = await getActiveAgentVersion(specialist.id);
       subtasks.push({
         id: crypto.randomUUID(),
         capability: specialist.capabilities[0] || "general",
         specialistName: specialist.name,
         status: "pending",
         cost: specialist.priceUsdc,
+        agentVersionId: activeVersion?.id,
+        agentVersion: activeVersion?.version,
+        versionHash: activeVersion?.versionHash,
       });
     }
   }
@@ -323,12 +350,16 @@ async function decomposeTaskFallback(description: string): Promise<Subtask[]> {
   // If nothing matched, use the first available specialist as a catch-all
   if (subtasks.length === 0 && allSpecialists.length > 0) {
     const fallback = allSpecialists[0];
+    const activeVersion = await getActiveAgentVersion(fallback.id);
     subtasks.push({
       id: crypto.randomUUID(),
       capability: fallback.capabilities[0] || "general",
       specialistName: fallback.name,
       status: "pending",
       cost: fallback.priceUsdc,
+      agentVersionId: activeVersion?.id,
+      agentVersion: activeVersion?.version,
+      versionHash: activeVersion?.versionHash,
     });
   }
 

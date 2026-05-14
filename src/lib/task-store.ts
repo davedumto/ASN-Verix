@@ -40,6 +40,7 @@ class TaskStore {
           status: s.status as Task["status"],
           cost: s.cost ? Number(s.cost) : undefined,
           result: s.result ?? undefined,
+          agentVersionId: s.agentVersionId ?? undefined,
         })) ?? [],
       createdAt: t.createdAt.toISOString(),
       completedAt: t.completedAt?.toISOString(),
@@ -228,6 +229,7 @@ class TaskStore {
             status: subtask.status,
             cost: subtask.cost,
             result: subtask.result,
+            agentVersionId: subtask.agentVersionId ?? null,
             completedAt: subtask.status === "completed" ? new Date() : null,
           },
           update: {
@@ -241,6 +243,7 @@ class TaskStore {
             status: subtask.status,
             cost: subtask.cost,
             result: subtask.result,
+            agentVersionId: subtask.agentVersionId ?? null,
             completedAt: subtask.status === "completed" ? new Date() : null,
           },
         })
