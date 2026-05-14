@@ -88,6 +88,7 @@ export async function registerSpecialist(data: {
   priceUsdc: number;
   walletAddress: string;
   aiModel: "claude" | "openai";
+  proofPolicy?: "trace-only" | "receipt-proof" | "escrow-eligible";
   apiKey?: string;
 }): Promise<Specialist> {
   return authedRequest("/api/specialists", {
