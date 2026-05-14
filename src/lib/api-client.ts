@@ -101,6 +101,24 @@ export async function registerSpecialist(data: {
   });
 }
 
+export async function updateSpecialist(
+  id: string,
+  data: {
+    description?: string;
+    capabilities?: string;
+    priceUsdc?: number;
+    walletAddress?: string;
+    aiModel?: "claude" | "openai";
+    proofPolicy?: "trace-only" | "receipt-proof" | "escrow-eligible";
+    apiKey?: string;
+  }
+): Promise<Specialist> {
+  return authedRequest(`/api/specialists?id=${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
 export async function deleteSpecialist(id: string): Promise<void> {
   return authedRequest(`/api/specialists?id=${encodeURIComponent(id)}`, {
     method: "DELETE",
