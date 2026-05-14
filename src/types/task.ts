@@ -68,6 +68,7 @@ export interface CreateTaskRequest {
 
 export interface CreateTaskResponse {
   task_id: string;
+  job_id: string;
   estimated_cost: number;
   subtasks: string[];
 }
