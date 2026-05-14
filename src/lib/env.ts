@@ -118,6 +118,13 @@ function buildEnv() {
     CREATIVE_WRITER_PRIVATE_KEY: isProd
       ? requireVar("CREATIVE_WRITER_PRIVATE_KEY", mode)
       : process.env.CREATIVE_WRITER_PRIVATE_KEY,
+
+    /**
+     * Optional secret that grants admin-level access to mutating APIs via
+     * the X-Admin-Token request header. Useful for judge demos and manual
+     * cleanup. If unset, only session-based ownership is enforced.
+     */
+    ADMIN_SECRET: process.env.ADMIN_SECRET,
   } as const;
 }
 

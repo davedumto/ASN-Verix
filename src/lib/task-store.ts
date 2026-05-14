@@ -30,6 +30,7 @@ class TaskStore {
       spendCap: t.spendCap ? Number(t.spendCap) : undefined,
       result: t.result as unknown as Task["result"],
       events: (t.events as unknown as Task["events"]) ?? [],
+      ownerId: (t as unknown as { ownerId?: string | null }).ownerId ?? undefined,
       subtasks:
         t.subtasks?.map((s) => ({
           id: s.id,
@@ -83,6 +84,7 @@ class TaskStore {
           spendCap: task.spendCap,
           result: task.result as object ?? undefined,
           events: task.events as object[] ?? [],
+          ownerId: task.ownerId,
           createdAt: new Date(task.createdAt),
           completedAt: task.completedAt ? new Date(task.completedAt) : null,
         },
@@ -93,6 +95,7 @@ class TaskStore {
           spendCap: task.spendCap,
           result: task.result as object ?? undefined,
           events: task.events as object[] ?? [],
+          ownerId: task.ownerId,
           completedAt: task.completedAt ? new Date(task.completedAt) : null,
         },
       });
@@ -143,6 +146,7 @@ class TaskStore {
             spendCap: updated.spendCap,
             result: updated.result as object ?? undefined,
             events: updated.events as object[] ?? [],
+            ownerId: updated.ownerId,
             completedAt: updated.completedAt ? new Date(updated.completedAt) : null,
           },
         });

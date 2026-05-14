@@ -12,4 +12,5 @@ export interface Specialist {
   aiModel?: "claude" | "openai";
   apiKey?: string;        // encrypted, never sent to client
   apiKeyMasked?: string;  // "sk-abc...xyz1", safe for display
+  ownerId?: string;       // session ID of registering user; null for system agents
 }

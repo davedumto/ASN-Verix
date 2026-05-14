@@ -4,6 +4,7 @@ import {
   getReputation,
   updateReputation,
 } from "@/services/reputation";
+import { getSessionId, unauthorizedResponse } from "@/lib/auth";
 
 export async function GET() {
   const reputationScores = await getAllReputations();
@@ -12,6 +13,12 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    // Reputation updates require an active session to prevent anonymous spam
+    const sessionId = getSessionId(request);
+    if (!sessionId && !request.headers.get("x-admin-token")) {
+      return unauthorizedResponse("A session is required to submit reputation ratings");
+    }
+
     const body = await request.json();
     const { specialistId, rating } = body;
 

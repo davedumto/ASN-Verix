@@ -4,26 +4,70 @@ import { WalletBalance } from "@/types/payment";
 
 const API_URL = process.env.NEXT_PUBLIC_APP_URL || "";
 
+const SESSION_STORAGE_KEY = "asn_session_id";
+const SESSION_HEADER = "x-session-id";
+
+// ── Session management ────────────────────────────────────────────────────────
+
+/**
+ * Returns the cached session ID from localStorage, fetching from the server
+ * if one has not been established yet.
+ */
+export async function getOrInitSession(): Promise<string> {
+  if (typeof window === "undefined") return "";
+
+  const cached = localStorage.getItem(SESSION_STORAGE_KEY);
+  if (cached) return cached;
+
+  const data = await fetch(`${API_URL}/api/session`).then((r) => r.json());
+  const sessionId: string = data.sessionId;
+  localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+  return sessionId;
+}
+
+/** Read the current session ID without initiating a network request. */
+export function getCurrentSession(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(SESSION_STORAGE_KEY);
+}
+
+// ── HTTP primitives ───────────────────────────────────────────────────────────
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...options?.headers,
     },
     ...options,
   });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.message || `Request failed: ${response.statusText}`);
+    throw new Error(error.error || error.message || `Request failed: ${response.statusText}`);
   }
 
   return response.json();
 }
 
+/** Like `request`, but attaches the session header to the outgoing call. */
+async function authedRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  const sessionId = await getOrInitSession();
+  return request<T>(path, {
+    ...options,
+    headers: {
+      ...(options?.headers ?? {}),
+      ...(sessionId ? { [SESSION_HEADER]: sessionId } : {}),
+    },
+  });
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
 export async function submitTask(
   data: CreateTaskRequest
 ): Promise<CreateTaskResponse> {
-  return request("/api/tasks", {
+  return authedRequest("/api/tasks", {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -46,14 +90,14 @@ export async function registerSpecialist(data: {
   aiModel: "claude" | "openai";
   apiKey?: string;
 }): Promise<Specialist> {
-  return request("/api/specialists", {
+  return authedRequest("/api/specialists", {
     method: "POST",
     body: JSON.stringify(data),
   });
 }
 
 export async function deleteSpecialist(id: string): Promise<void> {
-  return request(`/api/specialists?id=${encodeURIComponent(id)}`, {
+  return authedRequest(`/api/specialists?id=${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
 }
@@ -67,5 +111,7 @@ export async function getTaskHistory(): Promise<Task[]> {
 }
 
 export async function deleteTask(id: string): Promise<void> {
-  return request(`/api/tasks?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  return authedRequest(`/api/tasks?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
