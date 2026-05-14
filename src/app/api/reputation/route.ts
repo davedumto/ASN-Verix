@@ -1,54 +1,67 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getAllReputations,
-  getReputation,
-  updateReputation,
+  appendReputationEvent,
+  ReputationEventType,
 } from "@/services/reputation";
-import { getSessionId, unauthorizedResponse } from "@/lib/auth";
+
+const VALID_EVENT_TYPES: ReputationEventType[] = [
+  "verified_completion",
+  "demo_completion",
+  "failure",
+];
 
 export async function GET() {
   const reputationScores = await getAllReputations();
   return NextResponse.json(reputationScores);
 }
 
+/**
+ * POST /api/reputation
+ *
+ * Create a receipt-backed reputation event for a specialist.
+ * Restricted to internal services — requires the x-admin-token header.
+ * Reputation cannot be updated by arbitrary authenticated user sessions;
+ * all events must be tied to execution outcomes.
+ *
+ * Body: { specialistId, type, taskId? }
+ *   type: "verified_completion" | "demo_completion" | "failure"
+ */
 export async function POST(request: NextRequest) {
-  try {
-    // Reputation updates require an active session to prevent anonymous spam
-    const sessionId = getSessionId(request);
-    if (!sessionId && !request.headers.get("x-admin-token")) {
-      return unauthorizedResponse("A session is required to submit reputation ratings");
-    }
-
-    const body = await request.json();
-    const { specialistId, rating } = body;
-
-    if (!specialistId || rating === undefined) {
-      return NextResponse.json(
-        { error: "specialistId and rating are required" },
-        { status: 400 }
-      );
-    }
-
-    if (typeof rating !== "number" || rating < 0 || rating > 100) {
-      return NextResponse.json(
-        { error: "Rating must be between 0 and 100" },
-        { status: 400 }
-      );
-    }
-
-    const current = await getReputation(specialistId);
-    const updated = await updateReputation(specialistId, rating);
-
-    return NextResponse.json({
-      specialistId,
-      previousScore: current.score,
-      newScore: updated.score,
-      totalRatings: updated.totalRatings,
-    });
-  } catch (error) {
-    console.error("Reputation update failed:", error);
+  // Only internal services may record reputation events
+  const adminToken = request.headers.get("x-admin-token");
+  if (!adminToken || adminToken !== process.env.ADMIN_TOKEN) {
     return NextResponse.json(
-      { error: "Failed to update reputation" },
+      { error: "Reputation events may only be recorded by internal services" },
+      { status: 403 }
+    );
+  }
+
+  try {
+    const body = await request.json();
+    const { specialistId, type, taskId } = body;
+
+    if (!specialistId) {
+      return NextResponse.json({ error: "specialistId is required" }, { status: 400 });
+    }
+
+    if (!type || !VALID_EVENT_TYPES.includes(type as ReputationEventType)) {
+      return NextResponse.json(
+        { error: `type must be one of: ${VALID_EVENT_TYPES.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    await appendReputationEvent(specialistId, type as ReputationEventType, {
+      taskId: taskId ?? undefined,
+      verified: type === "verified_completion",
+    });
+
+    return NextResponse.json({ success: true, specialistId, type });
+  } catch (error) {
+    console.error("Reputation event failed:", error);
+    return NextResponse.json(
+      { error: "Failed to record reputation event" },
       { status: 500 }
     );
   }

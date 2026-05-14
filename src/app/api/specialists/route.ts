@@ -5,6 +5,7 @@ import {
   removeSpecialist,
   updateSpecialist,
 } from "@/services/discovery";
+import { getReputationStatsForAll } from "@/services/reputation";
 import { ProofPolicy } from "@/types/specialist";
 import { encrypt, maskApiKey } from "@/lib/encryption";
 import {
@@ -27,6 +28,10 @@ function toProofPolicy(raw: string | undefined): ProofPolicy {
 export async function GET() {
   const specialists = await getAllSpecialists();
 
+  // Batch-fetch receipt-backed reputation stats so the catalog can show
+  // verified vs. total job counts without a separate client request.
+  const repStats = await getReputationStatsForAll(specialists.map((s) => s.id)).catch(() => ({} as Record<string, { verifiedJobs: number }>));
+
   // Strip encrypted API keys — only send masked version to client
   const safe = specialists.map((s) => ({
     ...s,
@@ -34,6 +39,7 @@ export async function GET() {
     apiKeyMasked: s.apiKeyMasked || undefined,
     // Omit ownerId from client responses (server-side ownership detail)
     ownerId: undefined,
+    verifiedJobs: repStats[s.id]?.verifiedJobs ?? 0,
   }));
 
   return NextResponse.json(safe);
