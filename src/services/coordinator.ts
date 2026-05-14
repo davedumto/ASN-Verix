@@ -18,6 +18,9 @@ import {
   getActiveAgentVersion,
 } from "@/services/discovery";
 import { appendReputationEvent } from "@/services/reputation";
+import { recordTraceEvent } from "@/services/trace";
+import { generateReceipt } from "@/services/receipt";
+import { sha256 } from "@/lib/hash";
 import { decrypt } from "@/lib/encryption";
 import { env } from "@/lib/env";
 
@@ -59,6 +62,12 @@ export async function executeCoordinator(
 
   await pushEvent(taskId, "coordinator", "Coordinator received task. Analyzing with AI...", "info");
 
+  // ── TRACE: coordinator_start ─────────────────────────────────────────────
+  await recordTraceEvent(taskId, "coordinator_start", "coordinator",
+    "Coordinator received task and began decomposition",
+    { inputHash: sha256(description), metadata: { descriptionLength: description.length } }
+  ).catch((e) => console.warn("[Trace] coordinator_start failed:", e));
+
   // Phase 1: AI-powered task decomposition
   const subtasks = await decomposeTaskWithAI(description);
 
@@ -68,18 +77,49 @@ export async function executeCoordinator(
 
   await pushEvent(taskId, "coordinator", `AI selected ${subtasks.length} specialist(s) for this task.`, "success");
 
+  // ── TRACE: task_decomposed ───────────────────────────────────────────────
+  const subtaskNames = subtasks.map((s) => s.specialistName ?? "unknown");
+  await recordTraceEvent(taskId, "task_decomposed", "coordinator",
+    `Task decomposed into ${subtasks.length} subtask(s): ${subtaskNames.join(", ")}`,
+    {
+      outputHash: sha256(JSON.stringify(subtaskNames)),
+      metadata: { specialists: subtaskNames, count: subtasks.length },
+    }
+  ).catch((e) => console.warn("[Trace] task_decomposed failed:", e));
+
   for (const s of subtasks) {
     await pushEvent(taskId, "coordinator", `Specialist assigned: ${s.specialistName} ($${s.cost?.toFixed(2)} USDC)`, "info");
+
+    // ── TRACE: specialist_assigned ─────────────────────────────────────────
+    await recordTraceEvent(taskId, "specialist_assigned", s.specialistName ?? "unknown",
+      `${s.specialistName} assigned for capability: ${s.capability}`,
+      { metadata: { specialistName: s.specialistName, capability: s.capability, cost: s.cost, agentVersionId: s.agentVersionId, agentVersion: s.agentVersion, versionHash: s.versionHash } }
+    ).catch((e) => console.warn("[Trace] specialist_assigned failed:", e));
   }
 
   // Spend cap enforcement
   const estimatedTotal = subtasks.reduce((sum, s) => sum + (s.cost || 0), 0);
   const effectiveCap = spendCap ?? 50; // default $50 cap
 
-  if (estimatedTotal > effectiveCap) {
+  // ── TRACE: spend_cap_check ───────────────────────────────────────────────
+  const capPassed = estimatedTotal <= effectiveCap;
+  await recordTraceEvent(taskId, capPassed ? "spend_cap_check" : "spend_cap_exceeded", "coordinator",
+    capPassed
+      ? `Spend cap check passed: $${estimatedTotal.toFixed(2)} within $${effectiveCap.toFixed(2)} limit`
+      : `Spend cap exceeded: $${estimatedTotal.toFixed(2)} > $${effectiveCap.toFixed(2)}`,
+    { metadata: { estimatedTotal, effectiveCap, passed: capPassed } }
+  ).catch((e) => console.warn("[Trace] spend_cap_check failed:", e));
+
+  if (!capPassed) {
     console.warn(`[Coordinator] Spend cap exceeded: $${estimatedTotal} > $${effectiveCap}`);
     await pushEvent(taskId, "system", `Spend cap exceeded! Estimated $${estimatedTotal.toFixed(2)} exceeds cap of $${effectiveCap.toFixed(2)}. Task blocked.`, "error");
     await failExecution(taskId, `Spend cap exceeded: $${estimatedTotal.toFixed(2)} > $${effectiveCap.toFixed(2)}`);
+
+    // ── TRACE: task_failed (spend cap) ──────────────────────────────────────
+    await recordTraceEvent(taskId, "task_failed", "coordinator",
+      `Task failed: spend cap exceeded`,
+      { metadata: { reason: "spend_cap_exceeded", estimatedTotal, effectiveCap } }
+    ).catch((e) => console.warn("[Trace] task_failed failed:", e));
     return;
   }
 
@@ -116,6 +156,13 @@ export async function executeCoordinator(
       // Pay the specialist on-chain via x402 BEFORE executing
       await pushEvent(taskId, "specialist", `Initiating x402 payment to ${subtask.specialistName}...`, "pending");
       console.log(`[Coordinator] Paying ${subtask.specialistName} $${subtask.cost} USDC...`);
+
+      // ── TRACE: payment_initiated ─────────────────────────────────────────
+      await recordTraceEvent(taskId, "payment_initiated", "payment",
+        `Initiating x402 payment to ${subtask.specialistName} ($${subtask.cost?.toFixed(2)} USDC)`,
+        { metadata: { specialistName: subtask.specialistName, amount: subtask.cost, agentVersionId: subtask.agentVersionId } }
+      ).catch((e) => console.warn("[Trace] payment_initiated failed:", e));
+
       const payment = await createPayment(taskId, subtask.specialistName!, subtask.cost!);
       payments.push(payment);
 
@@ -123,6 +170,13 @@ export async function executeCoordinator(
         // Payment failed — do NOT execute the specialist
         console.warn(`[Coordinator] Payment failed for ${subtask.specialistName} — skipping execution`);
         await pushEvent(taskId, "payment", `Payment to ${subtask.specialistName} failed on-chain. Agent will not execute.`, "error");
+
+        // ── TRACE: payment_failed ──────────────────────────────────────────
+        await recordTraceEvent(taskId, "payment_failed", "payment",
+          `Payment to ${subtask.specialistName} failed on-chain`,
+          { metadata: { specialistName: subtask.specialistName, amount: subtask.cost } }
+        ).catch((e) => console.warn("[Trace] payment_failed failed:", e));
+
         subtasks[i] = { ...subtask, status: "failed" };
         await updateExecution(taskId, { subtasks: [...subtasks] });
         continue;
@@ -138,12 +192,39 @@ export async function executeCoordinator(
         "success"
       );
 
+      // ── TRACE: payment_confirmed ─────────────────────────────────────────
+      await recordTraceEvent(taskId, "payment_confirmed", "payment",
+        `Payment confirmed: $${subtask.cost?.toFixed(2)} USDC to ${subtask.specialistName} (tx: ${payment.txHash?.slice(0, 10)}...)`,
+        {
+          outputHash: payment.txHash ? sha256(payment.txHash) : undefined,
+          metadata: { specialistName: subtask.specialistName, txHash: payment.txHash, blockNumber: payment.blockNumber, amount: subtask.cost },
+        }
+      ).catch((e) => console.warn("[Trace] payment_confirmed failed:", e));
+
       await pushEvent(taskId, "specialist", `${subtask.specialistName} is processing...`, "pending");
+
+      // ── TRACE: specialist_invoked ────────────────────────────────────────
+      await recordTraceEvent(taskId, "specialist_invoked", subtask.specialistName ?? "unknown",
+        `${subtask.specialistName} invoked`,
+        {
+          inputHash: sha256(description),
+          metadata: { specialistName: subtask.specialistName, agentVersionId: subtask.agentVersionId, agentVersion: subtask.agentVersion },
+        }
+      ).catch((e) => console.warn("[Trace] specialist_invoked failed:", e));
 
       // Execute specialist with real AI (only after payment confirmed)
       const result = await executeSpecialist(subtask, description);
 
       await pushEvent(taskId, "specialist", `${subtask.specialistName} delivered results.`, "info");
+
+      // ── TRACE: specialist_completed ──────────────────────────────────────
+      await recordTraceEvent(taskId, "specialist_completed", subtask.specialistName ?? "unknown",
+        `${subtask.specialistName} completed successfully`,
+        {
+          outputHash: sha256(result),
+          metadata: { specialistName: subtask.specialistName, agentVersionId: subtask.agentVersionId, resultLength: result.length },
+        }
+      ).catch((e) => console.warn("[Trace] specialist_completed failed:", e));
 
       // Update subtask as completed
       subtasks[i] = {
@@ -192,6 +273,12 @@ export async function executeCoordinator(
           }).catch((err) => console.warn(`[Coordinator] Reputation failure event failed for ${subtask.specialistName}:`, err));
         }
       }
+
+      // ── TRACE: specialist_failed ─────────────────────────────────────────
+      await recordTraceEvent(taskId, "specialist_failed", subtask.specialistName ?? "unknown",
+        `${subtask.specialistName} failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        { metadata: { specialistName: subtask.specialistName, error: error instanceof Error ? error.message : "Unknown error" } }
+      ).catch((e) => console.warn("[Trace] specialist_failed failed:", e));
     }
   }
 
@@ -230,10 +317,12 @@ export async function executeCoordinator(
     "success"
   );
 
+  const resultSummary = `Successfully completed ${deliverables.length} subtask(s). ${confirmedCount} on-chain payment(s) confirmed on SKALE Calypso. Total: $${totalSpent.toFixed(2)} USDC (zero gas fees).`;
+
   await completeExecution(
     taskId,
     {
-      summary: `Successfully completed ${deliverables.length} subtask(s). ${confirmedCount} on-chain payment(s) confirmed on SKALE Calypso. Total: $${totalSpent.toFixed(2)} USDC (zero gas fees).`,
+      summary: resultSummary,
       deliverables,
       paymentBreakdown,
       totalCost: totalSpent,
@@ -241,6 +330,31 @@ export async function executeCoordinator(
     },
     totalSpent
   );
+
+  // ── TRACE: task_completed ────────────────────────────────────────────────
+  await recordTraceEvent(taskId, "task_completed", "coordinator",
+    `Task completed: ${deliverables.length} deliverable(s), $${totalSpent.toFixed(2)} USDC spent`,
+    {
+      inputHash: sha256(description),
+      outputHash: sha256(resultSummary),
+      metadata: { deliverables: deliverables.length, totalSpent, confirmedPayments: confirmedCount },
+    }
+  ).catch((e) => console.warn("[Trace] task_completed failed:", e));
+
+  // ── RECEIPT: generate proof-ready receipt ────────────────────────────────
+  const agentVersionIds = subtasks
+    .map((s) => s.agentVersionId)
+    .filter((id): id is string => Boolean(id));
+
+  generateReceipt({
+    taskId,
+    description,
+    spendCap: spendCap ?? 50,
+    totalCost: totalSpent,
+    agentVersionIds,
+    resultSummary,
+    paymentBreakdown,
+  }).catch((e) => console.warn("[Receipt] generateReceipt failed:", e));
 
   console.log(`[Coordinator] Task ${taskId} completed. Total spent: $${totalSpent.toFixed(2)} USDC`);
 }

@@ -18,9 +18,11 @@ model Task {
   createdAt   DateTime @default(now())
   completedAt DateTime?
 
-  subtasks    Subtask[]
-  payments    Payment[]
-  jobs        Job[]
+  subtasks     Subtask[]
+  payments     Payment[]
+  jobs         Job[]
+  traceEvents  ExecutionTraceEvent[]
+  receipt      ExecutionReceipt?
 }
 
 model Subtask {
@@ -144,6 +146,69 @@ model ReputationEvent {
 
   @@index([specialistId])
   @@index([specialistId, verified])
+}
+
+/**
+ * Structured, hash-chained trace event for a single execution step.
+ *
+ * Every meaningful coordinator action (routing, payment, specialist execution,
+ * lifecycle transitions) is recorded as a trace event. Events are chained via
+ * prevEventHash so the final eventHash of the last event serves as the trace
+ * root — any mutation to an earlier event changes all subsequent hashes.
+ *
+ * eventHash = SHA-256(taskId | sequence | eventType | actor | inputHash |
+ *                     outputHash | prevEventHash)
+ */
+model ExecutionTraceEvent {
+  id            String   @id @default(cuid())
+  taskId        String
+  sequence      Int
+  /// TraceEventType: coordinator_start | task_decomposed | spend_cap_check |
+  ///   spend_cap_exceeded | specialist_assigned | payment_initiated |
+  ///   payment_confirmed | payment_failed | specialist_invoked |
+  ///   specialist_completed | specialist_failed | task_completed | task_failed
+  eventType     String
+  actor         String
+  displayMessage String
+  inputHash     String?
+  outputHash    String?
+  eventHash     String
+  prevEventHash String?
+  metadata      Json?
+  timestamp     DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, sequence])
+  @@index([taskId])
+}
+
+/**
+ * Canonical receipt for a completed execution.
+ *
+ * Commits to task input, selected agent version snapshots, spend cap, total
+ * cost, the trace root, output summary, and all on-chain payment entries.
+ * receiptHash = SHA-256(canonical JSON of the receipt fields).
+ *
+ * The receipt is the artifact that downstream proof and escrow systems consume.
+ * status starts as "proof_ready" once all trace events exist.
+ */
+model ExecutionReceipt {
+  id                 String   @id @default(cuid())
+  taskId             String   @unique
+  taskInputHash      String
+  agentVersionHashes String[]
+  spendCap           Decimal?
+  totalCost          Decimal?
+  traceRoot          String
+  outputHash         String?
+  paymentSummary     Json
+  receiptHash        String
+  /// ReceiptStatus: "pending" | "proof_ready" | "verified"
+  status             String   @default("proof_ready")
+  createdAt          DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 }
 
 /**
