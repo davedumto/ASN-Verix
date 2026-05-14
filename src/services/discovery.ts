@@ -376,6 +376,105 @@ export async function registerSpecialist(
   return toSpecialist({ ...row, currentVersion: nextVersion });
 }
 
+export type SpecialistUpdateFields = Partial<
+  Pick<Specialist, "description" | "capabilities" | "priceUsdc" | "walletAddress" | "proofPolicy" | "aiModel" | "status"> & {
+    apiKey: string;
+    apiKeyMasked: string;
+  }
+>;
+
+/**
+ * Partially update an existing specialist.
+ *
+ * Versioned fields (price, wallet, capabilities, proofPolicy, aiModel) trigger
+ * a new immutable AgentVersion snapshot so subtasks and receipts can always
+ * reference the exact metadata that was active at invocation time.
+ *
+ * Returns the updated specialist, or null if the ID is unknown.
+ */
+export async function updateSpecialist(
+  id: string,
+  fields: SpecialistUpdateFields
+): Promise<{ specialist: Specialist | null; ownerId?: string }> {
+  const existing = await prisma.specialist.findUnique({ where: { id } });
+  if (!existing) return { specialist: null };
+
+  const VERSIONED_KEYS: Array<keyof SpecialistUpdateFields> = [
+    "priceUsdc",
+    "walletAddress",
+    "capabilities",
+    "proofPolicy",
+    "aiModel",
+  ];
+
+  const versionedChanged = VERSIONED_KEYS.some((k) => {
+    if (!(k in fields)) return false;
+    const next = fields[k];
+    const current = existing[k as keyof typeof existing];
+    if (Array.isArray(next) && Array.isArray(current)) {
+      return JSON.stringify([...next].sort()) !== JSON.stringify([...current].sort());
+    }
+    return String(next) !== String(current);
+  });
+
+  const updated = await prisma.specialist.update({
+    where: { id },
+    data: {
+      ...(fields.description !== undefined ? { description: fields.description } : {}),
+      ...(fields.capabilities !== undefined ? { capabilities: fields.capabilities } : {}),
+      ...(fields.priceUsdc !== undefined ? { priceUsdc: fields.priceUsdc } : {}),
+      ...(fields.walletAddress !== undefined ? { walletAddress: fields.walletAddress } : {}),
+      ...(fields.proofPolicy !== undefined ? { proofPolicy: fields.proofPolicy } : {}),
+      ...(fields.aiModel !== undefined ? { aiModel: fields.aiModel } : {}),
+      ...(fields.status !== undefined ? { status: fields.status } : {}),
+      ...(fields.apiKey !== undefined ? { apiKey: fields.apiKey } : {}),
+      ...(fields.apiKeyMasked !== undefined ? { apiKeyMasked: fields.apiKeyMasked } : {}),
+    },
+  });
+
+  if (versionedChanged) {
+    const nextVersion = (updated.currentVersion ?? 0) + 1;
+    const versionHash = computeVersionHash(
+      updated.name,
+      nextVersion,
+      Number(updated.priceUsdc),
+      updated.walletAddress,
+      updated.capabilities,
+      updated.proofPolicy
+    );
+
+    await prisma.agentVersion.create({
+      data: {
+        specialistId: updated.id,
+        version: nextVersion,
+        name: updated.name,
+        description: updated.description,
+        walletAddress: updated.walletAddress,
+        capabilities: updated.capabilities,
+        priceUsdc: updated.priceUsdc,
+        proofPolicy: updated.proofPolicy,
+        aiModel: updated.aiModel ?? "openai",
+        versionHash,
+      },
+    });
+
+    await prisma.specialist.update({
+      where: { id: updated.id },
+      data: { currentVersion: nextVersion },
+    });
+
+    return {
+      specialist: toSpecialist({ ...updated, currentVersion: nextVersion }),
+      ownerId: existing.ownerId ?? undefined,
+    };
+  }
+
+  return {
+    specialist: toSpecialist(updated),
+    ownerId: existing.ownerId ?? undefined,
+  };
+}
+
 export async function removeSpecialist(id: string): Promise<{ found: boolean; ownerId?: string }> {
   await ensureSeeded();
   const row = await prisma.specialist.findUnique({ where: { id } });

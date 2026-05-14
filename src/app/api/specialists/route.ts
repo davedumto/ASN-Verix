@@ -3,6 +3,7 @@ import {
   getAllSpecialists,
   registerSpecialist,
   removeSpecialist,
+  updateSpecialist,
 } from "@/services/discovery";
 import { ProofPolicy } from "@/types/specialist";
 import { encrypt, maskApiKey } from "@/lib/encryption";
@@ -107,6 +108,110 @@ export async function POST(request: NextRequest) {
     console.error("[API] Error registering specialist:", error);
     return NextResponse.json(
       { error: "Failed to register specialist" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PUT /api/specialists?id=xxx
+ *
+ * Partially update a specialist the caller owns.
+ * Only mutable fields are accepted; name and ownerId are immutable.
+ * Changing price, wallet, capabilities, proofPolicy, or aiModel creates a
+ * new immutable AgentVersion snapshot.
+ */
+export async function PUT(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "ID is required" }, { status: 400 });
+    }
+
+    const sessionId = getSessionId(request);
+    if (!sessionId && !request.headers.get("x-admin-token")) {
+      return unauthorizedResponse("A session is required to update specialists");
+    }
+
+    const body = await request.json();
+    const { description, capabilities, priceUsdc, walletAddress, aiModel, proofPolicy, apiKey } = body;
+
+    // Validate fields that are present
+    if (priceUsdc !== undefined) {
+      const parsed = parseFloat(priceUsdc);
+      if (isNaN(parsed) || parsed < 0) {
+        return NextResponse.json(
+          { error: "Invalid price — must be a non-negative number" },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (walletAddress !== undefined && walletAddress !== "") {
+      if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+        return NextResponse.json(
+          { error: "Invalid wallet address — must be a 0x-prefixed 20-byte hex address" },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (capabilities !== undefined) {
+      const caps = Array.isArray(capabilities)
+        ? capabilities
+        : String(capabilities).split(",").map((c: string) => c.trim()).filter(Boolean);
+      if (caps.length === 0) {
+        return NextResponse.json(
+          { error: "At least one capability is required" },
+          { status: 400 }
+        );
+      }
+    }
+
+    const VALID_POLICIES: ProofPolicy[] = ["trace-only", "receipt-proof", "escrow-eligible"];
+    if (proofPolicy !== undefined && !VALID_POLICIES.includes(proofPolicy as ProofPolicy)) {
+      return NextResponse.json(
+        { error: `Invalid proof policy — must be one of: ${VALID_POLICIES.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    // Look up existing to check ownership
+    const { specialist: existing, ownerId } = await updateSpecialist(id, {}); // dry read
+    if (!existing) {
+      return NextResponse.json({ error: "Specialist not found" }, { status: 404 });
+    }
+    if (!canMutate(request, ownerId)) {
+      return forbiddenResponse("You can only update specialists you registered");
+    }
+
+    // Build the update payload
+    const fields: Parameters<typeof updateSpecialist>[1] = {};
+    if (description !== undefined) fields.description = description;
+    if (priceUsdc !== undefined) fields.priceUsdc = parseFloat(priceUsdc);
+    if (walletAddress !== undefined) fields.walletAddress = walletAddress || "0x0000000000000000000000000000000000000000";
+    if (proofPolicy !== undefined) fields.proofPolicy = proofPolicy as ProofPolicy;
+    if (aiModel !== undefined) fields.aiModel = aiModel === "claude" ? "claude" : "openai";
+    if (capabilities !== undefined) {
+      fields.capabilities = Array.isArray(capabilities)
+        ? capabilities
+        : String(capabilities).split(",").map((c: string) => c.trim()).filter(Boolean);
+    }
+    if (apiKey !== undefined && apiKey !== "") {
+      fields.apiKey = encrypt(apiKey);
+      fields.apiKeyMasked = maskApiKey(apiKey);
+    }
+
+    const { specialist: updated } = await updateSpecialist(id, fields);
+
+    console.log(`[API] Updated specialist: ${id}`);
+    return NextResponse.json({ ...updated, apiKey: undefined, ownerId: undefined });
+  } catch (error) {
+    console.error("[API] Error updating specialist:", error);
+    return NextResponse.json(
+      { error: "Failed to update specialist" },
       { status: 500 }
     );
   }
