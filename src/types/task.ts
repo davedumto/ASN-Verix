@@ -1,3 +1,5 @@
+import type { ExecutionTraceEvent } from "@/types/trace";
+
 export type TaskStatus =
   | "pending"
   | "decomposing"
@@ -14,6 +16,7 @@ export interface Task {
   result?: TaskResult;
   subtasks?: Subtask[];
   events?: TaskEvent[];
+  traceEvents?: ExecutionTraceEvent[];
   spendCap?: number;
   ownerId?: string;
   createdAt: string;

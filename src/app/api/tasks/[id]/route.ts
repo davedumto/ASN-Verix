@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getExecution } from "@/services/execution";
 import { prisma } from "@/lib/db";
+import { getTraceEvents } from "@/services/trace";
 
 export async function GET(
   _request: NextRequest,
@@ -43,5 +44,14 @@ export async function GET(
     };
   });
 
-  return NextResponse.json({ ...task, subtasks: enrichedSubtasks });
+  // Fetch structured trace events for this task so the dashboard can render
+  // the full hash-chained execution feed rather than the legacy JSON blob.
+  let traceEvents: Awaited<ReturnType<typeof getTraceEvents>> = [];
+  try {
+    traceEvents = await getTraceEvents(id);
+  } catch {
+    // Non-fatal — fall back to task.events in the client
+  }
+
+  return NextResponse.json({ ...task, subtasks: enrichedSubtasks, traceEvents });
 }

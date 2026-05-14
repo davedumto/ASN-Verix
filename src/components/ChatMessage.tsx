@@ -22,6 +22,11 @@ export interface ThinkingStep {
     status: "info" | "success" | "error" | "pending";
     type: string;
     timestamp: string;
+    // Trace fields — present when the step originates from an ExecutionTraceEvent
+    actor?: string;
+    eventType?: string;
+    eventHash?: string;
+    sequence?: number;
 }
 
 export interface ChatMessageData {
@@ -280,7 +285,21 @@ function ThinkingBlock({ message }: { message: ChatMessageData }) {
                                         className="flex items-start gap-2 py-0.5"
                                     >
                                         <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${statusDotColor(step.status)}`} />
-                                        <span className="text-xs text-ink-secondary">{step.message}</span>
+                                        <div className="flex flex-col gap-0.5 min-w-0">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                {step.actor && (
+                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-surface-tertiary border border-border text-ink-muted shrink-0">
+                                                        {step.actor}
+                                                    </span>
+                                                )}
+                                                <span className="text-xs text-ink-secondary">{step.message}</span>
+                                            </div>
+                                            {step.eventHash && (
+                                                <span className="text-[9px] font-mono text-ink-muted/60 tracking-tight" title={step.eventHash}>
+                                                    #{step.sequence !== undefined ? `${step.sequence} · ` : ""}{step.eventHash.slice(0, 12)}
+                                                </span>
+                                            )}
+                                        </div>
                                     </motion.div>
                                 ))}
                             </div>
