@@ -1,4 +1,4 @@
-import { defineConfig, env } from 'prisma/config'
+import { defineConfig } from 'prisma/config'
 import dotenv from 'dotenv'
 
 // Load from .env.local (Next.js convention)
@@ -10,6 +10,8 @@ export default defineConfig({
     path: 'prisma/migrations',
   },
   datasource: {
-    url: env('DATABASE_URL'),
+    // DATABASE_URL is required for migrations (prisma db push / migrate).
+    // For client generation only (prisma generate), it can be absent.
+    url: process.env.DATABASE_URL ?? '',
   },
 })

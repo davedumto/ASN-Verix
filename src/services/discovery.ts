@@ -66,6 +66,7 @@ function toSpecialist(row: {
   aiModel: string | null;
   apiKey: string | null;
   apiKeyMasked: string | null;
+  ownerId?: string | null;
 }): Specialist {
   return {
     id: row.id,
@@ -81,6 +82,7 @@ function toSpecialist(row: {
     aiModel: row.aiModel === "claude" ? "claude" : "openai",
     apiKey: row.apiKey ?? undefined,
     apiKeyMasked: row.apiKeyMasked ?? undefined,
+    ownerId: row.ownerId ?? undefined,
   };
 }
 
@@ -176,7 +178,10 @@ export async function getSpecialistById(id: string): Promise<Specialist | undefi
   return row ? toSpecialist(row) : undefined;
 }
 
-export async function registerSpecialist(specialist: Specialist): Promise<Specialist> {
+export async function registerSpecialist(
+  specialist: Specialist,
+  ownerId?: string
+): Promise<Specialist> {
   await ensureSeeded();
   const row = await prisma.specialist.upsert({
     where: { name: specialist.name },
@@ -194,6 +199,7 @@ export async function registerSpecialist(specialist: Specialist): Promise<Specia
       aiModel: specialist.aiModel ?? "openai",
       apiKey: specialist.apiKey,
       apiKeyMasked: specialist.apiKeyMasked,
+      ownerId,
     },
     update: {
       description: specialist.description,
@@ -226,15 +232,15 @@ export async function registerSpecialist(specialist: Specialist): Promise<Specia
   return toSpecialist(row);
 }
 
-export async function removeSpecialist(id: string): Promise<boolean> {
+export async function removeSpecialist(id: string): Promise<{ found: boolean; ownerId?: string }> {
   await ensureSeeded();
   const row = await prisma.specialist.findUnique({ where: { id } });
-  if (!row) return false;
+  if (!row) return { found: false };
 
   await prisma.specialist.update({
     where: { id },
     data: { status: "offline" },
   });
 
-  return true;
+  return { found: true, ownerId: row.ownerId ?? undefined };
 }

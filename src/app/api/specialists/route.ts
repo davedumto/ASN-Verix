@@ -5,6 +5,13 @@ import {
   removeSpecialist,
 } from "@/services/discovery";
 import { encrypt, maskApiKey } from "@/lib/encryption";
+import {
+  canMutate,
+  forbiddenResponse,
+  getSessionId,
+  setSessionCookie,
+  unauthorizedResponse,
+} from "@/lib/auth";
 
 export async function GET() {
   const specialists = await getAllSpecialists();
@@ -14,6 +21,8 @@ export async function GET() {
     ...s,
     apiKey: undefined,
     apiKeyMasked: s.apiKeyMasked || undefined,
+    // Omit ownerId from client responses (server-side ownership detail)
+    ownerId: undefined,
   }));
 
   return NextResponse.json(safe);
@@ -21,6 +30,10 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    // Require a session to register a new specialist
+    const existingSession = getSessionId(request);
+    const sessionId = existingSession ?? crypto.randomUUID();
+
     const body = await request.json();
     const { name, description, capabilities, priceUsdc, walletAddress, aiModel, apiKey } = body;
 
@@ -49,17 +62,19 @@ export async function POST(request: NextRequest) {
       apiKeyMasked: apiKey ? maskApiKey(apiKey) : undefined,
     };
 
-    const registered = await registerSpecialist(specialist);
-    console.log(`[API] Registered specialist: ${specialist.name} (API key: ${apiKey ? "provided" : "none"})`);
+    const registered = await registerSpecialist(specialist, sessionId);
+    console.log(`[API] Registered specialist: ${specialist.name} (session: ${sessionId})`);
 
-    // Return without the encrypted key
-    return NextResponse.json(
-      {
-        ...registered,
-        apiKey: undefined,
-      },
+    const response = NextResponse.json(
+      { ...registered, apiKey: undefined, ownerId: undefined },
       { status: 201 }
     );
+
+    if (!existingSession) {
+      setSessionCookie(response, sessionId);
+    }
+
+    return response;
   } catch (error) {
     console.error("[API] Error registering specialist:", error);
     return NextResponse.json(
@@ -78,9 +93,20 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "ID is required" }, { status: 400 });
     }
 
-    const removed = await removeSpecialist(id);
-    if (!removed) {
+    // Require a session
+    const sessionId = getSessionId(request);
+    if (!sessionId && !request.headers.get("x-admin-token")) {
+      return unauthorizedResponse("A session is required to remove specialists");
+    }
+
+    const result = await removeSpecialist(id);
+    if (!result.found) {
       return NextResponse.json({ error: "Specialist not found" }, { status: 404 });
+    }
+
+    // Check ownership
+    if (!canMutate(request, result.ownerId)) {
+      return forbiddenResponse("You can only remove specialists you registered");
     }
 
     console.log(`[API] Removed specialist: ${id}`);

@@ -14,6 +14,7 @@ model Task {
   totalCost   Decimal?
   spendCap    Decimal?
   events      Json?    @default("[]")
+  ownerId     String?
   createdAt   DateTime @default(now())
   completedAt DateTime?
 
@@ -51,6 +52,7 @@ model Specialist {
   aiModel       String?  @default("openai")
   apiKey        String?
   apiKeyMasked  String?
+  ownerId       String?
   createdAt     DateTime @default(now())
 
   subtasks Subtask[]

@@ -4,9 +4,17 @@ import { executeCoordinator } from "@/services/coordinator";
 import {
   createExecution,
   deleteExecution,
+  getExecution,
   listExecutions,
   startExecution,
 } from "@/services/execution";
+import {
+  canMutate,
+  forbiddenResponse,
+  getSessionId,
+  setSessionCookie,
+  unauthorizedResponse,
+} from "@/lib/auth";
 
 export async function GET() {
   const tasks = await listExecutions();
@@ -24,16 +32,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { task, estimate } = await createExecution(body);
+    // Resolve or create a session for this caller
+    const existingSession = getSessionId(request);
+    const sessionId = existingSession ?? crypto.randomUUID();
+
+    const { task, estimate } = await createExecution(body, sessionId);
     await startExecution(task, executeCoordinator);
 
-    const response: CreateTaskResponse = {
+    const responseBody: CreateTaskResponse = {
       task_id: task.id,
       estimated_cost: estimate.estimated_cost,
       subtasks: estimate.subtasks,
     };
 
-    return NextResponse.json(response, { status: 201 });
+    const response = NextResponse.json(responseBody, { status: 201 });
+
+    // Issue a session cookie if the caller didn't already have one
+    if (!existingSession) {
+      setSessionCookie(response, sessionId);
+    }
+
+    return response;
   } catch (error) {
     console.error("Failed to create task:", error);
     return NextResponse.json(
@@ -52,11 +71,23 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Task ID is required" }, { status: 400 });
     }
 
-    const deleted = await deleteExecution(id);
-    if (!deleted) {
+    const task = await getExecution(id);
+    if (!task) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
 
+    // Require a session
+    const sessionId = getSessionId(request);
+    if (!sessionId && !request.headers.get("x-admin-token")) {
+      return unauthorizedResponse("A session is required to delete tasks");
+    }
+
+    // Check ownership
+    if (!canMutate(request, task.ownerId)) {
+      return forbiddenResponse("You can only delete tasks you created");
+    }
+
+    await deleteExecution(id);
     console.log(`[API] Deleted task: ${id}`);
     return NextResponse.json({ success: true });
   } catch (error) {

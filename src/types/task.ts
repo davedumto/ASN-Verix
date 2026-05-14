@@ -15,6 +15,7 @@ export interface Task {
   subtasks?: Subtask[];
   events?: TaskEvent[];
   spendCap?: number;
+  ownerId?: string;
   createdAt: string;
   completedAt?: string;
 }

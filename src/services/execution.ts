@@ -84,7 +84,8 @@ export async function deleteExecution(id: string): Promise<boolean> {
 }
 
 export async function createExecution(
-  request: CreateTaskRequest
+  request: CreateTaskRequest,
+  ownerId?: string
 ): Promise<{ task: Task; estimate: Pick<CreateTaskResponse, "estimated_cost" | "subtasks"> }> {
   const description = request.description.trim();
   const task: Task = {
@@ -93,6 +94,7 @@ export async function createExecution(
     status: "pending",
     spendCap: request.spendCap ?? DEFAULT_SPEND_CAP,
     events: [],
+    ownerId,
     createdAt: new Date().toISOString(),
   };
 

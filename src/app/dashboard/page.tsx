@@ -13,6 +13,8 @@ import {
   getTaskHistory,
   getSpecialists,
   deleteTask,
+  getOrInitSession,
+  getCurrentSession,
 } from "@/lib/api-client";
 import { Specialist } from "@/types/specialist";
 
@@ -42,6 +44,9 @@ export default function Dashboard() {
 
   // Task history
   const [taskHistory, setTaskHistory] = useState<Task[]>([]);
+
+  // Session
+  const [sessionId, setSessionId] = useState<string | null>(getCurrentSession);
 
   // Sidebar
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -133,6 +138,8 @@ export default function Dashboard() {
     fetchWalletBalance();
     fetchHistory();
     getSpecialists().then(setSpecialists).catch(() => { });
+    // Ensure the session is initialised and cached in localStorage
+    getOrInitSession().then(setSessionId).catch(() => { });
   }, [fetchWalletBalance, fetchHistory]);
 
   // Add a chat message
@@ -475,6 +482,7 @@ export default function Dashboard() {
             console.error("Failed to delete task:", e);
           }
         }}
+        sessionId={sessionId}
         walletBalance={walletBalance}
         walletAddress={walletAddress}
         networkStatus={networkStatus}
