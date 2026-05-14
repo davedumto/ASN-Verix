@@ -87,84 +87,101 @@ function AgentCard({ specialist, index }: { specialist: Specialist; index: numbe
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.04, duration: 0.25 }}
-      className="group bg-white/[0.04] border border-white/10 rounded-2xl p-5 hover:border-white/20 hover:bg-white/[0.06] transition-all flex flex-col gap-4"
     >
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          {/* Avatar */}
-          <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0 text-base font-bold text-white/60">
-            {specialist.name.charAt(0)}
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-semibold text-sm text-white truncate">{specialist.name}</h3>
-              {isSystem && (
-                <span className="px-1.5 py-0.5 rounded bg-white/8 text-[9px] font-mono text-white/30 uppercase tracking-wide">
-                  System
-                </span>
-              )}
+      <Link
+        href={`/marketplace/${encodeURIComponent(specialist.id)}`}
+        className="group flex flex-col gap-4 bg-white/4 border border-white/10 rounded-2xl p-5 hover:border-white/20 hover:bg-white/6 transition-all"
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Avatar */}
+            <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0 text-base font-bold text-white/60">
+              {specialist.name.charAt(0)}
             </div>
-            <p className="text-[11px] text-white/30 mt-0.5">
-              {AI_MODEL_LABELS[specialist.aiModel ?? "openai"] ?? specialist.aiModel}
-              {" · "}v{specialist.currentVersion}
-            </p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-semibold text-sm text-white truncate group-hover:text-white/90 transition-colors">
+                  {specialist.name}
+                </h3>
+                {isSystem && (
+                  <span className="px-1.5 py-0.5 rounded bg-white/8 text-[9px] font-mono text-white/30 uppercase tracking-wide">
+                    System
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-white/30 mt-0.5">
+                {AI_MODEL_LABELS[specialist.aiModel ?? "openai"] ?? specialist.aiModel}
+                {" · "}v{specialist.currentVersion}
+              </p>
+            </div>
+          </div>
+
+          {/* Status dot + profile arrow */}
+          <div className="flex items-center gap-2 shrink-0">
+            <span
+              className={`w-2 h-2 rounded-full ${specialist.status === "online" ? "bg-emerald-400" : specialist.status === "busy" ? "bg-yellow-400" : "bg-white/20"}`}
+              title={specialist.status}
+            />
+            <svg
+              className="w-3.5 h-3.5 text-white/20 group-hover:text-white/50 transition-colors -translate-x-1 group-hover:translate-x-0"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+            </svg>
           </div>
         </div>
 
-        {/* Status dot */}
-        <span
-          className={`w-2 h-2 rounded-full shrink-0 mt-1 ${specialist.status === "online" ? "bg-emerald-400" : specialist.status === "busy" ? "bg-yellow-400" : "bg-white/20"}`}
-          title={specialist.status}
-        />
-      </div>
+        {/* Description */}
+        <p className="text-xs text-white/45 leading-relaxed line-clamp-2">{specialist.description}</p>
 
-      {/* Description */}
-      <p className="text-xs text-white/45 leading-relaxed line-clamp-2">{specialist.description}</p>
+        {/* Capabilities */}
+        <div className="flex flex-wrap gap-1.5">
+          {specialist.capabilities.slice(0, 4).map((cap) => (
+            <span
+              key={cap}
+              className="px-2 py-0.5 rounded-md bg-white/6 text-[10px] text-white/45"
+            >
+              {cap}
+            </span>
+          ))}
+          {specialist.capabilities.length > 4 && (
+            <span className="px-2 py-0.5 rounded-md bg-white/6 text-[10px] text-white/30">
+              +{specialist.capabilities.length - 4}
+            </span>
+          )}
+        </div>
 
-      {/* Capabilities */}
-      <div className="flex flex-wrap gap-1.5">
-        {specialist.capabilities.slice(0, 4).map((cap) => (
-          <span
-            key={cap}
-            className="px-2 py-0.5 rounded-md bg-white/[0.06] text-[10px] text-white/45"
-          >
-            {cap}
+        {/* Reputation bar */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] text-white/30 uppercase tracking-wide">Reputation</span>
+            <span className="text-[10px] text-white/30">{specialist.totalJobs} jobs</span>
+          </div>
+          <ReputationBar score={specialist.reputation} />
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between pt-1 border-t border-white/6">
+          <div className="flex items-center gap-2">
+            <ProofBadge policy={policy} />
+          </div>
+          <span className="text-sm font-mono font-semibold text-white">
+            ${specialist.priceUsdc.toFixed(2)}
+            <span className="text-white/30 font-normal text-[11px] ml-1">USDC/task</span>
           </span>
-        ))}
-        {specialist.capabilities.length > 4 && (
-          <span className="px-2 py-0.5 rounded-md bg-white/[0.06] text-[10px] text-white/30">
-            +{specialist.capabilities.length - 4}
-          </span>
+        </div>
+
+        {/* Wallet */}
+        {specialist.walletAddress && specialist.walletAddress !== "0x0000000000000000000000000000000000000000" && (
+          <div className="text-[10px] font-mono text-white/20 truncate">
+            {specialist.walletAddress.slice(0, 10)}…{specialist.walletAddress.slice(-6)}
+          </div>
         )}
-      </div>
-
-      {/* Reputation bar */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[10px] text-white/30 uppercase tracking-wide">Reputation</span>
-          <span className="text-[10px] text-white/30">{specialist.totalJobs} jobs</span>
-        </div>
-        <ReputationBar score={specialist.reputation} />
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between pt-1 border-t border-white/[0.06]">
-        <div className="flex items-center gap-2">
-          <ProofBadge policy={policy} />
-        </div>
-        <span className="text-sm font-mono font-semibold text-white">
-          ${specialist.priceUsdc.toFixed(2)}
-          <span className="text-white/30 font-normal text-[11px] ml-1">USDC/task</span>
-        </span>
-      </div>
-
-      {/* Wallet */}
-      {specialist.walletAddress && specialist.walletAddress !== "0x0000000000000000000000000000000000000000" && (
-        <div className="text-[10px] font-mono text-white/20 truncate">
-          {specialist.walletAddress.slice(0, 10)}…{specialist.walletAddress.slice(-6)}
-        </div>
-      )}
+      </Link>
     </motion.div>
   );
 }
@@ -314,7 +331,7 @@ export default function MarketplacePage() {
               placeholder="Search agents…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3.5 py-2 rounded-xl bg-white/[0.06] border border-white/10 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/30 transition-colors"
+              className="w-full pl-9 pr-3.5 py-2 rounded-xl bg-white/6 border border-white/10 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/30 transition-colors"
             />
           </div>
 
@@ -322,7 +339,7 @@ export default function MarketplacePage() {
           <select
             value={capFilter}
             onChange={(e) => setCapFilter(e.target.value)}
-            className="px-3.5 py-2 rounded-xl bg-white/[0.06] border border-white/10 text-sm text-white/70 focus:outline-none focus:border-white/30 transition-colors"
+            className="px-3.5 py-2 rounded-xl bg-white/6 border border-white/10 text-sm text-white/70 focus:outline-none focus:border-white/30 transition-colors"
           >
             <option value="">All capabilities</option>
             {allCapabilities.map((c) => (
@@ -334,7 +351,7 @@ export default function MarketplacePage() {
           <select
             value={policyFilter}
             onChange={(e) => setPolicyFilter(e.target.value as ProofPolicy | "")}
-            className="px-3.5 py-2 rounded-xl bg-white/[0.06] border border-white/10 text-sm text-white/70 focus:outline-none focus:border-white/30 transition-colors"
+            className="px-3.5 py-2 rounded-xl bg-white/6 border border-white/10 text-sm text-white/70 focus:outline-none focus:border-white/30 transition-colors"
           >
             <option value="">All proof policies</option>
             <option value="trace-only">Trace only</option>
@@ -346,7 +363,7 @@ export default function MarketplacePage() {
           <select
             value={sortKey}
             onChange={(e) => setSortKey(e.target.value as SortKey)}
-            className="px-3.5 py-2 rounded-xl bg-white/[0.06] border border-white/10 text-sm text-white/70 focus:outline-none focus:border-white/30 transition-colors"
+            className="px-3.5 py-2 rounded-xl bg-white/6 border border-white/10 text-sm text-white/70 focus:outline-none focus:border-white/30 transition-colors"
           >
             <option value="reputation">Sort: Reputation</option>
             <option value="price-asc">Sort: Price ↑</option>

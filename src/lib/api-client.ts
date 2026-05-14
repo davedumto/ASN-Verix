@@ -1,5 +1,5 @@
 import { CreateTaskRequest, CreateTaskResponse, Task } from "@/types/task";
-import { Specialist } from "@/types/specialist";
+import { Specialist, SpecialistProfile } from "@/types/specialist";
 import { WalletBalance } from "@/types/payment";
 
 const API_URL = process.env.NEXT_PUBLIC_APP_URL || "";
@@ -79,6 +79,10 @@ export async function getTaskStatus(taskId: string): Promise<Task> {
 
 export async function getSpecialists(): Promise<Specialist[]> {
   return request("/api/specialists");
+}
+
+export async function getSpecialistProfile(id: string): Promise<SpecialistProfile> {
+  return request(`/api/specialists/${encodeURIComponent(id)}`);
 }
 
 export async function registerSpecialist(data: {

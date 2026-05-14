@@ -33,3 +33,16 @@ export interface AgentVersion {
   versionHash: string;
   createdAt: string;
 }
+
+export interface SpecialistReputationStats {
+  score: number;
+  totalJobs: number;
+  verifiedJobs: number;
+  demoJobs: number;
+  successRate: number;
+}
+
+export interface SpecialistProfile extends Omit<Specialist, "reputation"> {
+  versions: AgentVersion[];
+  reputation: SpecialistReputationStats;
+}
