@@ -282,9 +282,10 @@ export default function Dashboard() {
           setResult(task.result);
           // Finalize thinking block
           finalizeThinking(elapsedTime);
-          // Add result as a proper chat response
+          // Add result as a proper chat response — include receipt when available
           addMessage("result", "Task completed successfully", "success", {
             result: task.result,
+            receipt: task.receipt ?? undefined,
           });
           fetchWalletBalance();
           clearInterval(interval);
@@ -451,7 +452,7 @@ export default function Dashboard() {
         });
       }
 
-      // Add result if present
+      // Add result if present — include receipt so the card can show proof status
       if (task.result) {
         rebuiltMessages.push({
           id: crypto.randomUUID(),
@@ -460,6 +461,7 @@ export default function Dashboard() {
           status: "success",
           timestamp: task.completedAt || task.createdAt,
           result: task.result,
+          receipt: task.receipt ?? undefined,
         });
       }
 

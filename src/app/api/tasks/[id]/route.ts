@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getExecution } from "@/services/execution";
 import { prisma } from "@/lib/db";
 import { getTraceEvents } from "@/services/trace";
+import { getReceipt } from "@/services/receipt";
 
 export async function GET(
   _request: NextRequest,
@@ -53,5 +54,14 @@ export async function GET(
     // Non-fatal — fall back to task.events in the client
   }
 
-  return NextResponse.json({ ...task, subtasks: enrichedSubtasks, traceEvents });
+  // Include the ExecutionReceipt when available so the dashboard can display
+  // proof status and receiptHash without a separate round-trip.
+  let receipt: Awaited<ReturnType<typeof getReceipt>> = null;
+  try {
+    receipt = await getReceipt(id);
+  } catch {
+    // Non-fatal — receipt may not exist yet for in-progress tasks
+  }
+
+  return NextResponse.json({ ...task, subtasks: enrichedSubtasks, traceEvents, receipt });
 }
