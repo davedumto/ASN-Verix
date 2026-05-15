@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { Task, Subtask, TaskResult, TaskEvent } from "@/types/task";
 import { Specialist } from "@/types/specialist";
+import { AgentExecutionEnvelope } from "@/types/execution";
 import {
   appendExecutionEvent,
   completeExecution,
@@ -44,6 +45,8 @@ interface InitResult {
 
 interface RouteResult {
   subtasks: Subtask[];
+  registrySnapshotHash: string;
+  selectedAgentVersions: Array<{ specialistName: string; agentVersionId?: string; versionHash?: string }>;
 }
 
 interface SpendCapResult {
@@ -57,6 +60,13 @@ interface ExecuteResult {
   payments: Payment[];
   totalSpent: number;
   subtasks: Subtask[];
+  envelopes: AgentExecutionEnvelope[];
+}
+
+interface SpecialistResult {
+  output: string;
+  model: string;
+  provider: "claude" | "openai" | "fallback";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,7 +108,19 @@ async function stageInitialize(
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function stageRoute(taskId: string, description: string): Promise<RouteResult> {
+  // Snapshot the registry before routing so the receipt can commit to which agents were available
+  const allSpecialists = await getSpecialistSummariesForRouting();
+  const registrySnapshotHash = sha256(
+    JSON.stringify([...allSpecialists].sort((a, b) => a.name.localeCompare(b.name)))
+  );
+
   const subtasks = await decomposeTaskWithAI(description);
+
+  const selectedAgentVersions = subtasks.map((s) => ({
+    specialistName: s.specialistName ?? "unknown",
+    agentVersionId: s.agentVersionId,
+    versionHash: s.versionHash,
+  }));
 
   await transitionExecution(taskId, "discovering", { subtasks });
 
@@ -109,7 +131,12 @@ async function stageRoute(taskId: string, description: string): Promise<RouteRes
     `Task decomposed into ${subtasks.length} subtask(s): ${subtaskNames.join(", ")}`,
     {
       outputHash: sha256(JSON.stringify(subtaskNames)),
-      metadata: { specialists: subtaskNames, count: subtasks.length },
+      metadata: {
+        specialists: subtaskNames,
+        count: subtasks.length,
+        registrySnapshotHash,
+        selectedAgentVersions,
+      },
     }
   ).catch((e) => console.warn("[Trace] task_decomposed failed:", e));
 
@@ -122,7 +149,7 @@ async function stageRoute(taskId: string, description: string): Promise<RouteRes
     ).catch((e) => console.warn("[Trace] specialist_assigned failed:", e));
   }
 
-  return { subtasks };
+  return { subtasks, registrySnapshotHash, selectedAgentVersions };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -171,141 +198,189 @@ async function stageExecute(
 ): Promise<ExecuteResult> {
   await transitionExecution(taskId, "processing");
 
+  const concurrencyLimit = env.COORDINATOR_CONCURRENCY_LIMIT;
   const subtasks = [...initialSubtasks];
   const deliverables: Array<{ title: string; content: string; specialistName: string }> = [];
   const payments: Payment[] = [];
+  const envelopes: AgentExecutionEnvelope[] = [];
   let totalSpent = 0;
+
+  // ── Phase A: Serial payment — no concurrent spend-cap races ─────────────────
+  const readyForAI: Array<{ index: number; subtask: Subtask; payment: Payment }> = [];
 
   for (let i = 0; i < subtasks.length; i++) {
     const subtask = subtasks[i];
-    console.log(`[Coordinator] Executing subtask: ${subtask.specialistName}`);
-
-    await pushEvent(taskId, "specialist", `${subtask.specialistName} is processing...`, "pending");
+    console.log(`[Coordinator] Payment phase: ${subtask.specialistName}`);
 
     subtasks[i] = { ...subtask, status: "processing" };
     await updateExecution(taskId, { subtasks: [...subtasks] });
 
-    try {
-      if (totalSpent + (subtask.cost || 0) > effectiveCap) {
-        await pushEvent(taskId, "system", `Payment blocked: cumulative spend $${(totalSpent + (subtask.cost || 0)).toFixed(2)} would exceed cap $${effectiveCap.toFixed(2)}.`, "error");
-        subtasks[i] = { ...subtask, status: "failed" };
-        await updateExecution(taskId, { subtasks: [...subtasks] });
-        continue;
-      }
-
-      await pushEvent(taskId, "specialist", `Initiating x402 payment to ${subtask.specialistName}...`, "pending");
-      console.log(`[Coordinator] Paying ${subtask.specialistName} $${subtask.cost} USDC...`);
-
-      await recordTraceEvent(taskId, "payment_initiated", "payment",
-        `Initiating x402 payment to ${subtask.specialistName} ($${subtask.cost?.toFixed(2)} USDC)`,
-        { metadata: { specialistName: subtask.specialistName, amount: subtask.cost, agentVersionId: subtask.agentVersionId } }
-      ).catch((e) => console.warn("[Trace] payment_initiated failed:", e));
-
-      const payment = await createPayment(taskId, subtask.specialistName!, subtask.cost!);
-      payments.push(payment);
-
-      if (payment.status !== "confirmed") {
-        console.warn(`[Coordinator] Payment failed for ${subtask.specialistName} — skipping execution`);
-        await pushEvent(taskId, "payment", `Payment to ${subtask.specialistName} failed on-chain. Agent will not execute.`, "error");
-
-        await recordTraceEvent(taskId, "payment_failed", "payment",
-          `Payment to ${subtask.specialistName} failed on-chain`,
-          { metadata: { specialistName: subtask.specialistName, amount: subtask.cost } }
-        ).catch((e) => console.warn("[Trace] payment_failed failed:", e));
-
-        subtasks[i] = { ...subtask, status: "failed" };
-        await updateExecution(taskId, { subtasks: [...subtasks] });
-        continue;
-      }
-
-      totalSpent += subtask.cost || 0;
-      console.log(`[Coordinator] Payment confirmed: ${payment.txHash}`);
-      await pushEvent(
-        taskId,
-        "payment",
-        `Paid $${subtask.cost?.toFixed(2)} USDC to ${subtask.specialistName} — tx: ${payment.txHash?.slice(0, 10)}... (block #${payment.blockNumber})`,
-        "success"
-      );
-
-      await recordTraceEvent(taskId, "payment_confirmed", "payment",
-        `Payment confirmed: $${subtask.cost?.toFixed(2)} USDC to ${subtask.specialistName} (tx: ${payment.txHash?.slice(0, 10)}...)`,
-        {
-          outputHash: payment.txHash ? sha256(payment.txHash) : undefined,
-          metadata: { specialistName: subtask.specialistName, txHash: payment.txHash, blockNumber: payment.blockNumber, amount: subtask.cost },
-        }
-      ).catch((e) => console.warn("[Trace] payment_confirmed failed:", e));
-
-      await pushEvent(taskId, "specialist", `${subtask.specialistName} is processing...`, "pending");
-
-      await recordTraceEvent(taskId, "specialist_invoked", subtask.specialistName ?? "unknown",
-        `${subtask.specialistName} invoked`,
-        {
-          inputHash: sha256(description),
-          metadata: { specialistName: subtask.specialistName, agentVersionId: subtask.agentVersionId, agentVersion: subtask.agentVersion },
-        }
-      ).catch((e) => console.warn("[Trace] specialist_invoked failed:", e));
-
-      const result = await executeSpecialist(subtask, description);
-
-      await pushEvent(taskId, "specialist", `${subtask.specialistName} delivered results.`, "info");
-
-      await recordTraceEvent(taskId, "specialist_completed", subtask.specialistName ?? "unknown",
-        `${subtask.specialistName} completed successfully`,
-        {
-          outputHash: sha256(result),
-          metadata: { specialistName: subtask.specialistName, agentVersionId: subtask.agentVersionId, resultLength: result.length },
-        }
-      ).catch((e) => console.warn("[Trace] specialist_completed failed:", e));
-
-      subtasks[i] = { ...subtask, status: "completed", result };
-      await updateExecution(taskId, { subtasks: [...subtasks] });
-
-      deliverables.push({
-        title: `${subtask.specialistName} Report`,
-        content: result,
-        specialistName: subtask.specialistName!,
-      });
-
-      if (subtask.specialistId || subtask.specialistName) {
-        const specialist = subtask.specialistId
-          ? { id: subtask.specialistId }
-          : await getSpecialistByName(subtask.specialistName!);
-        if (specialist?.id) {
-          appendReputationEvent(specialist.id, "verified_completion", {
-            taskId,
-            verified: true,
-            metadata: { txHash: payment.txHash, agentVersionId: subtask.agentVersionId },
-          }).catch((err) => console.warn(`[Coordinator] Reputation event failed for ${subtask.specialistName}:`, err));
-        }
-      }
-
-      console.log(`[Coordinator] Completed subtask: ${subtask.specialistName}`);
-    } catch (error) {
-      console.error(`[Coordinator] Failed subtask: ${subtask.specialistName}`, error);
-      await pushEvent(taskId, "system", `${subtask.specialistName} failed: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
+    if (totalSpent + (subtask.cost || 0) > effectiveCap) {
+      await pushEvent(taskId, "system", `Payment blocked: cumulative spend $${(totalSpent + (subtask.cost || 0)).toFixed(2)} would exceed cap $${effectiveCap.toFixed(2)}.`, "error");
       subtasks[i] = { ...subtask, status: "failed" };
       await updateExecution(taskId, { subtasks: [...subtasks] });
-
-      if (subtask.specialistId || subtask.specialistName) {
-        const specialist = subtask.specialistId
-          ? { id: subtask.specialistId }
-          : await getSpecialistByName(subtask.specialistName!);
-        if (specialist?.id) {
-          appendReputationEvent(specialist.id, "failure", {
-            taskId,
-            metadata: { error: error instanceof Error ? error.message : "Unknown error" },
-          }).catch((err) => console.warn(`[Coordinator] Reputation failure event failed for ${subtask.specialistName}:`, err));
-        }
-      }
-
-      await recordTraceEvent(taskId, "specialist_failed", subtask.specialistName ?? "unknown",
-        `${subtask.specialistName} failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-        { metadata: { specialistName: subtask.specialistName, error: error instanceof Error ? error.message : "Unknown error" } }
-      ).catch((e) => console.warn("[Trace] specialist_failed failed:", e));
+      continue;
     }
+
+    await pushEvent(taskId, "specialist", `Initiating x402 payment to ${subtask.specialistName}...`, "pending");
+    console.log(`[Coordinator] Paying ${subtask.specialistName} $${subtask.cost} USDC...`);
+
+    await recordTraceEvent(taskId, "payment_initiated", "payment",
+      `Initiating x402 payment to ${subtask.specialistName} ($${subtask.cost?.toFixed(2)} USDC)`,
+      { metadata: { specialistName: subtask.specialistName, amount: subtask.cost, agentVersionId: subtask.agentVersionId } }
+    ).catch((e) => console.warn("[Trace] payment_initiated failed:", e));
+
+    let payment: Payment;
+    try {
+      payment = await createPayment(taskId, subtask.specialistName!, subtask.cost!);
+    } catch (err) {
+      await pushEvent(taskId, "system", `${subtask.specialistName} failed: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+      subtasks[i] = { ...subtask, status: "failed" };
+      await updateExecution(taskId, { subtasks: [...subtasks] });
+      await recordTraceEvent(taskId, "specialist_failed", subtask.specialistName ?? "unknown",
+        `${subtask.specialistName} failed during payment: ${err instanceof Error ? err.message : "Unknown error"}`,
+        { metadata: { specialistName: subtask.specialistName, error: err instanceof Error ? err.message : "Unknown error" } }
+      ).catch(() => { /* non-fatal */ });
+      continue;
+    }
+
+    payments.push(payment);
+
+    if (payment.status !== "confirmed") {
+      console.warn(`[Coordinator] Payment failed for ${subtask.specialistName} — skipping AI`);
+      await pushEvent(taskId, "payment", `Payment to ${subtask.specialistName} failed on-chain. Agent will not execute.`, "error");
+      await recordTraceEvent(taskId, "payment_failed", "payment",
+        `Payment to ${subtask.specialistName} failed on-chain`,
+        { metadata: { specialistName: subtask.specialistName, amount: subtask.cost } }
+      ).catch((e) => console.warn("[Trace] payment_failed failed:", e));
+      subtasks[i] = { ...subtask, status: "failed" };
+      await updateExecution(taskId, { subtasks: [...subtasks] });
+      continue;
+    }
+
+    totalSpent += subtask.cost || 0;
+    console.log(`[Coordinator] Payment confirmed: ${payment.txHash}`);
+    await pushEvent(
+      taskId,
+      "payment",
+      `Paid $${subtask.cost?.toFixed(2)} USDC to ${subtask.specialistName} — tx: ${payment.txHash?.slice(0, 10)}... (block #${payment.blockNumber})`,
+      "success"
+    );
+    await recordTraceEvent(taskId, "payment_confirmed", "payment",
+      `Payment confirmed: $${subtask.cost?.toFixed(2)} USDC to ${subtask.specialistName} (tx: ${payment.txHash?.slice(0, 10)}...)`,
+      {
+        outputHash: payment.txHash ? sha256(payment.txHash) : undefined,
+        metadata: { specialistName: subtask.specialistName, txHash: payment.txHash, blockNumber: payment.blockNumber, amount: subtask.cost },
+      }
+    ).catch((e) => console.warn("[Trace] payment_confirmed failed:", e));
+
+    readyForAI.push({ index: i, subtask: subtasks[i], payment });
   }
 
-  return { deliverables, payments, totalSpent, subtasks };
+  // ── Phase B: Concurrent AI execution in batches of concurrencyLimit ──────────
+  for (let b = 0; b < readyForAI.length; b += concurrencyLimit) {
+    const batch = readyForAI.slice(b, b + concurrencyLimit);
+
+    await Promise.allSettled(
+      batch.map(async ({ index, subtask, payment }) => {
+        await pushEvent(taskId, "specialist", `${subtask.specialistName} is processing...`, "pending");
+
+        await recordTraceEvent(taskId, "specialist_invoked", subtask.specialistName ?? "unknown",
+          `${subtask.specialistName} invoked`,
+          {
+            inputHash: sha256(description),
+            metadata: { specialistName: subtask.specialistName, agentVersionId: subtask.agentVersionId, agentVersion: subtask.agentVersion },
+          }
+        ).catch((e) => console.warn("[Trace] specialist_invoked failed:", e));
+
+        try {
+          const specialistResult = await executeSpecialist(subtask, description);
+          const { output: result, model, provider } = specialistResult;
+
+          await pushEvent(taskId, "specialist", `${subtask.specialistName} delivered results.`, "info");
+
+          const outputHash = sha256(result);
+          const promptHash = sha256(`${subtask.specialistName}:${description}`);
+          const envelope: AgentExecutionEnvelope = {
+            subtaskId: subtask.id,
+            specialistName: subtask.specialistName!,
+            agentVersionId: subtask.agentVersionId,
+            agentVersionHash: subtask.versionHash,
+            model,
+            provider,
+            promptHash,
+            inputHash: sha256(description),
+            outputHash,
+            completedAt: new Date().toISOString(),
+          };
+          envelopes.push(envelope);
+
+          await recordTraceEvent(taskId, "specialist_completed", subtask.specialistName ?? "unknown",
+            `${subtask.specialistName} completed successfully`,
+            {
+              outputHash,
+              metadata: {
+                specialistName: subtask.specialistName,
+                agentVersionId: subtask.agentVersionId,
+                resultLength: result.length,
+                model,
+                provider,
+                promptHash,
+              },
+            }
+          ).catch((e) => console.warn("[Trace] specialist_completed failed:", e));
+
+          subtasks[index] = { ...subtask, status: "completed", result };
+          await updateExecution(taskId, { subtasks: [...subtasks] });
+
+          deliverables.push({
+            title: `${subtask.specialistName} Report`,
+            content: result,
+            specialistName: subtask.specialistName!,
+          });
+
+          if (subtask.specialistId || subtask.specialistName) {
+            const specialist = subtask.specialistId
+              ? { id: subtask.specialistId }
+              : await getSpecialistByName(subtask.specialistName!);
+            if (specialist?.id) {
+              appendReputationEvent(specialist.id, "verified_completion", {
+                taskId,
+                verified: true,
+                metadata: { txHash: payment.txHash, agentVersionId: subtask.agentVersionId },
+              }).catch((err) => console.warn(`[Coordinator] Reputation event failed for ${subtask.specialistName}:`, err));
+            }
+          }
+
+          console.log(`[Coordinator] Completed subtask: ${subtask.specialistName}`);
+        } catch (error) {
+          console.error(`[Coordinator] Failed subtask: ${subtask.specialistName}`, error);
+          await pushEvent(taskId, "system", `${subtask.specialistName} failed: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
+          subtasks[index] = { ...subtask, status: "failed" };
+          await updateExecution(taskId, { subtasks: [...subtasks] });
+
+          if (subtask.specialistId || subtask.specialistName) {
+            const specialist = subtask.specialistId
+              ? { id: subtask.specialistId }
+              : await getSpecialistByName(subtask.specialistName!);
+            if (specialist?.id) {
+              appendReputationEvent(specialist.id, "failure", {
+                taskId,
+                metadata: { error: error instanceof Error ? error.message : "Unknown error" },
+              }).catch((err) => console.warn(`[Coordinator] Reputation failure event failed for ${subtask.specialistName}:`, err));
+            }
+          }
+
+          await recordTraceEvent(taskId, "specialist_failed", subtask.specialistName ?? "unknown",
+            `${subtask.specialistName} failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+            { metadata: { specialistName: subtask.specialistName, error: error instanceof Error ? error.message : "Unknown error" } }
+          ).catch((e) => console.warn("[Trace] specialist_failed failed:", e));
+        }
+      })
+    );
+  }
+
+  return { deliverables, payments, totalSpent, subtasks, envelopes };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -317,7 +392,8 @@ async function stageSynthesize(
   description: string,
   executeResult: ExecuteResult,
   spendCap: number | undefined,
-  initialSubtasks: Subtask[]
+  initialSubtasks: Subtask[],
+  registrySnapshotHash?: string
 ): Promise<void> {
   const { deliverables, payments, totalSpent, subtasks } = executeResult;
 
@@ -386,6 +462,7 @@ async function stageSynthesize(
     totalCost: totalSpent,
     agentVersionIds,
     resultSummary,
+    registrySnapshotHash,
     paymentBreakdown,
   }).catch((e) => console.warn("[Receipt] generateReceipt failed:", e));
 }
@@ -403,7 +480,7 @@ export async function executeCoordinator(
 
   const { effectiveCap } = await stageInitialize(taskId, description, spendCap);
 
-  const { subtasks } = await stageRoute(taskId, description);
+  const { subtasks, registrySnapshotHash } = await stageRoute(taskId, description);
 
   const capResult = await stageSpendCap(taskId, subtasks, effectiveCap);
   if (!capResult.passed) {
@@ -415,7 +492,7 @@ export async function executeCoordinator(
 
   const executeResult = await stageExecute(taskId, description, subtasks, effectiveCap);
 
-  await stageSynthesize(taskId, description, executeResult, spendCap, subtasks);
+  await stageSynthesize(taskId, description, executeResult, spendCap, subtasks, registrySnapshotHash);
 
   console.log(`[Coordinator] Task ${taskId} completed. Total spent: $${executeResult.totalSpent.toFixed(2)} USDC`);
 }
@@ -564,7 +641,7 @@ async function decomposeTaskFallback(description: string): Promise<Subtask[]> {
 async function executeSpecialist(
   subtask: Subtask,
   originalTask: string
-): Promise<string> {
+): Promise<SpecialistResult> {
   const specialist = await getSpecialistByName(subtask.specialistName!);
 
   const prompt = `You are ${subtask.specialistName}, a specialist AI agent.
@@ -611,10 +688,10 @@ Format your response in markdown. Be thorough but concise.`;
       const content = message.content[0];
       if (content.type === "text") {
         console.log(`[${subtask.specialistName}] ✅ Claude succeeded`);
-        return content.text;
+        return { output: content.text, model: "claude-3-5-sonnet-20241022", provider: "claude" };
       }
 
-      return "Analysis completed successfully.";
+      return { output: "Analysis completed successfully.", model: "claude-3-5-sonnet-20241022", provider: "claude" };
     } catch (error) {
       console.warn(`[${subtask.specialistName}] ⚠️  Claude failed, falling back to OpenAI:`, error);
     }
@@ -636,13 +713,14 @@ Format your response in markdown. Be thorough but concise.`;
     const content = completion.choices[0]?.message?.content;
     if (content) {
       console.log(`[${subtask.specialistName}] ✅ OpenAI succeeded`);
-      return content;
+      return { output: content, model: "gpt-4o", provider: "openai" };
     }
 
-    return "Analysis completed successfully.";
+    return { output: "Analysis completed successfully.", model: "gpt-4o", provider: "openai" };
   } catch (error) {
     console.warn(`[${subtask.specialistName}] OpenAI also failed, using fallback response:`, error);
-    return `# ${subtask.specialistName} Report\n\nAnalysis completed for: "${originalTask.substring(0, 100)}"\n\nBoth AI providers were unavailable. Please try again later.\n\n---\n*${subtask.specialistName} | $${subtask.cost?.toFixed(2)} USDC via x402*`;
+    const fallbackText = `# ${subtask.specialistName} Report\n\nAnalysis completed for: "${originalTask.substring(0, 100)}"\n\nBoth AI providers were unavailable. Please try again later.\n\n---\n*${subtask.specialistName} | $${subtask.cost?.toFixed(2)} USDC via x402*`;
+    return { output: fallbackText, model: "none", provider: "fallback" };
   }
 }
 
