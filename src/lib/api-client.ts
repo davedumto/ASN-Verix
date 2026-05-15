@@ -1,5 +1,5 @@
 import { CreateTaskRequest, CreateTaskResponse, Task } from "@/types/task";
-import { Specialist, SpecialistProfile } from "@/types/specialist";
+import { AiModelProvider, Specialist, SpecialistProfile } from "@/types/specialist";
 import { WalletBalance } from "@/types/payment";
 import { ExecutionTraceEvent, ExecutionReceipt } from "@/types/trace";
 import { ProofRecord } from "@/types/proof";
@@ -94,7 +94,7 @@ export async function registerSpecialist(data: {
   capabilities: string;
   priceUsdc: number;
   walletAddress: string;
-  aiModel: "claude" | "openai";
+  aiModel: AiModelProvider;
   proofPolicy?: "trace-only" | "receipt-proof" | "escrow-eligible";
   apiKey?: string;
 }): Promise<Specialist> {
@@ -111,7 +111,7 @@ export async function updateSpecialist(
     capabilities?: string;
     priceUsdc?: number;
     walletAddress?: string;
-    aiModel?: "claude" | "openai";
+    aiModel?: AiModelProvider;
     proofPolicy?: "trace-only" | "receipt-proof" | "escrow-eligible";
     apiKey?: string;
   }

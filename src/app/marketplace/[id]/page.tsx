@@ -8,6 +8,12 @@ import { getSpecialistProfile } from "@/lib/api-client";
 import { stellarAccountExplorerUrl } from "@/lib/stellar-config";
 import VerixMark from "@/components/VerixMark";
 
+const AI_MODEL_LABELS: Record<string, string> = {
+  claude: "Claude (Anthropic)",
+  openai: "GPT-4o (OpenAI)",
+  groq: "Groq Llama 3.3",
+};
+
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const PROOF_POLICY_CONFIG: Record<
@@ -346,7 +352,7 @@ export default function AgentProfilePage({
                 <div>
                   <div className="text-xs text-white/30 mb-1">AI Model</div>
                   <div className="font-mono text-white/70">
-                    {profile.aiModel === "claude" ? "Claude (Anthropic)" : "GPT-4o (OpenAI)"}
+                    {AI_MODEL_LABELS[profile.aiModel ?? "openai"] ?? profile.aiModel}
                   </div>
                 </div>
                 <div>

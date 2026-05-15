@@ -31,6 +31,7 @@ const PROOF_POLICY_LABELS: Record<ProofPolicy, { label: string; color: string; t
 const AI_MODEL_LABELS: Record<string, string> = {
   claude: "Claude",
   openai: "GPT-4o",
+  groq: "Groq",
 };
 
 // ── Types ──────────────────────────────────────────────────────────────────────

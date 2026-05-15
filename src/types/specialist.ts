@@ -1,4 +1,5 @@
 export type ProofPolicy = "trace-only" | "receipt-proof" | "escrow-eligible";
+export type AiModelProvider = "claude" | "openai" | "groq";
 
 export interface Specialist {
   id: string;
@@ -12,7 +13,7 @@ export interface Specialist {
   totalJobs: number;
   verifiedJobs?: number;  // receipt-backed verified completions from ReputationEvent
   status: "online" | "offline" | "busy";
-  aiModel?: "claude" | "openai";
+  aiModel?: AiModelProvider;
   proofPolicy: ProofPolicy;
   currentVersion: number;
   apiKey?: string;        // encrypted, never sent to client
