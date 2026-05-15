@@ -21,6 +21,9 @@
 export interface PaymentIntent {
   specialist: string;
   amount: number;               // USDC (2 decimal places)
+  recipientAddress?: string;    // Stellar receiver address for payout split validation
+  agentVersion?: number;        // immutable AgentVersion number used for receipt display
+  versionHash?: string;         // receipt-compatible AgentVersion hash field
   agentVersionHash?: string;    // SHA-256 of agent version metadata
   txHash?: string;              // on-chain transaction reference
 }
@@ -46,6 +49,7 @@ export interface ProofInput {
 
   // ── Output commitment ───────────────────────────────────────────────────────
   outputHash?: string;          // SHA-256(result summary)
+  registrySnapshotHash?: string; // SHA-256 of agent registry snapshot at routing time
 
   // ── Payment intents ─────────────────────────────────────────────────────────
   paymentIntents: PaymentIntent[];
@@ -119,5 +123,6 @@ export interface ProofInputBuildOptions {
   taskInputHash: string;
   agentVersionHashes: string[];
   outputHash?: string;
+  registrySnapshotHash?: string;
   paymentIntents: PaymentIntent[];
 }

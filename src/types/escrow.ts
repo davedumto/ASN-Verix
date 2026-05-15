@@ -63,6 +63,12 @@ export interface CreateEscrowInput {
   payerAddress: string;
   totalAmount: number;
   currency?: string;
+  milestones?: Array<{
+    description: string;
+    amount: number;
+    receiver: string;
+    specialistId?: string;
+  }>;
   metadata?: Record<string, unknown>;
 }
 

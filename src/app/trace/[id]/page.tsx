@@ -184,6 +184,7 @@ export default function TracePage({
                 { label: "Spend Cap", value: receipt.spendCap != null ? `$${Number(receipt.spendCap).toFixed(2)} USDC` : "—", full: undefined },
                 { label: "Total Cost", value: receipt.totalCost != null ? `$${Number(receipt.totalCost).toFixed(2)} USDC` : "—", full: undefined },
                 { label: "Agent Snapshots", value: `${receipt.agentVersionHashes.length} committed`, full: undefined },
+                { label: "Soroban Anchor", value: receipt.anchorContractId ? abbrev(receipt.anchorContractId, 6) : "—", full: receipt.anchorContractId },
                 { label: "Created", value: new Date(receipt.createdAt).toLocaleString(), full: undefined },
               ].map((row) => (
                 <div key={row.label} className="flex flex-col gap-0.5">

@@ -20,8 +20,10 @@ export type AppMode = "demo" | "local" | "production";
 // Blocked in production mode.
 const DEV_ENCRYPTION_SENTINEL = "dev-insecure-default-do-not-use-in-production";
 
-const DEFAULT_SKALE_RPC = "https://testnet.skalenodes.com/v1/giant-half-dual-testnet";
-const DEFAULT_USDC_ADDRESS = "0x4E2B3DD08B71F45Bb4bcfAE425D697c650e4212B";
+const DEFAULT_STELLAR_HORIZON = "https://horizon-testnet.stellar.org";
+const DEFAULT_SOROBAN_RPC = "https://soroban-testnet.stellar.org";
+const DEFAULT_STELLAR_EXPLORER = "https://stellar.expert/explorer/testnet";
+const DEFAULT_STELLAR_PASSPHRASE = "Test SDF Network ; September 2015";
 
 function detectMode(): AppMode {
   const explicit = process.env.APP_MODE;
@@ -96,28 +98,25 @@ function buildEnv() {
 
     // ── Blockchain ───────────────────────────────────────────────────────────
 
-    SKALE_RPC_URL: process.env.SKALE_RPC_URL ?? DEFAULT_SKALE_RPC,
-    USDC_CONTRACT_ADDRESS: process.env.USDC_CONTRACT_ADDRESS ?? DEFAULT_USDC_ADDRESS,
-    /** Optional: Thirdweb authenticated RPC — higher rate limits. */
-    THIRDWEB_SECRET_KEY: process.env.THIRDWEB_SECRET_KEY,
+    STELLAR_NETWORK: (process.env.STELLAR_NETWORK ?? "testnet") as "testnet" | "mainnet",
+    STELLAR_HORIZON_URL: process.env.STELLAR_HORIZON_URL ?? DEFAULT_STELLAR_HORIZON,
+    SOROBAN_RPC_URL: process.env.SOROBAN_RPC_URL ?? DEFAULT_SOROBAN_RPC,
+    STELLAR_NETWORK_PASSPHRASE: process.env.STELLAR_NETWORK_PASSPHRASE ?? DEFAULT_STELLAR_PASSPHRASE,
+    STELLAR_EXPLORER_URL: process.env.STELLAR_EXPLORER_URL ?? DEFAULT_STELLAR_EXPLORER,
+    STELLAR_USDC_CODE: process.env.STELLAR_USDC_CODE ?? "USDC",
+    STELLAR_USDC_ISSUER: process.env.STELLAR_USDC_ISSUER,
+    SOROBAN_AGENT_REGISTRY_CONTRACT_ID: process.env.SOROBAN_AGENT_REGISTRY_CONTRACT_ID,
+    SOROBAN_RECEIPT_ANCHOR_CONTRACT_ID: process.env.SOROBAN_RECEIPT_ANCHOR_CONTRACT_ID,
 
     // ── Wallets — required in production; optional in demo/local ─────────────
 
-    COORDINATOR_PRIVATE_KEY: isProd
-      ? requireVar("COORDINATOR_PRIVATE_KEY", mode)
-      : process.env.COORDINATOR_PRIVATE_KEY,
+    COORDINATOR_STELLAR_PUBLIC_KEY: isProd
+      ? requireVar("COORDINATOR_STELLAR_PUBLIC_KEY", mode)
+      : process.env.COORDINATOR_STELLAR_PUBLIC_KEY,
 
-    CODE_AUDITOR_PRIVATE_KEY: isProd
-      ? requireVar("CODE_AUDITOR_PRIVATE_KEY", mode)
-      : process.env.CODE_AUDITOR_PRIVATE_KEY,
-
-    MARKET_ANALYST_PRIVATE_KEY: isProd
-      ? requireVar("MARKET_ANALYST_PRIVATE_KEY", mode)
-      : process.env.MARKET_ANALYST_PRIVATE_KEY,
-
-    CREATIVE_WRITER_PRIVATE_KEY: isProd
-      ? requireVar("CREATIVE_WRITER_PRIVATE_KEY", mode)
-      : process.env.CREATIVE_WRITER_PRIVATE_KEY,
+    CODE_AUDITOR_STELLAR_PUBLIC_KEY: process.env.CODE_AUDITOR_STELLAR_PUBLIC_KEY,
+    MARKET_ANALYST_STELLAR_PUBLIC_KEY: process.env.MARKET_ANALYST_STELLAR_PUBLIC_KEY,
+    CREATIVE_WRITER_STELLAR_PUBLIC_KEY: process.env.CREATIVE_WRITER_STELLAR_PUBLIC_KEY,
 
     /**
      * Optional secret that grants admin-level access to mutating APIs via
@@ -147,6 +146,7 @@ function buildEnv() {
      * Typically the TW key ID (e.g. "RL_ZDxkj7Rf…"). Maps to TRUSTLESS_WORK_KEY_ID in .env.
      */
     TRUSTLESS_WORK_SIGNER_ADDRESS: process.env.TRUSTLESS_WORK_SIGNER_ADDRESS ?? process.env.TRUSTLESS_WORK_KEY_ID,
+    TRUSTLESS_WORK_ESCROW_TYPE: (process.env.TRUSTLESS_WORK_ESCROW_TYPE ?? "multi-release") as "single-release" | "multi-release",
 
     // ── Proof ─────────────────────────────────────────────────────────────────
 

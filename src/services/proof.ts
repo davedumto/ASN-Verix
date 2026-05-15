@@ -59,6 +59,9 @@ function receiptToProofInput(receipt: ExecutionReceipt): ProofInput {
   const paymentIntents = receipt.paymentSummary.map((p) => ({
     specialist: p.specialist,
     amount: p.amount,
+    recipientAddress: p.recipientAddress,
+    agentVersion: p.agentVersion,
+    versionHash: p.versionHash,
     agentVersionHash: p.versionHash,
     txHash: p.txHash,
   }));
@@ -72,6 +75,7 @@ function receiptToProofInput(receipt: ExecutionReceipt): ProofInput {
     spendCap: receipt.spendCap ?? 50,
     totalCost: receipt.totalCost ?? 0,
     outputHash: receipt.outputHash,
+    registrySnapshotHash: receipt.registrySnapshotHash,
     paymentIntents,
   });
 }
@@ -268,6 +272,31 @@ export async function verifyProof(proofId: string): Promise<ProofRecord> {
     }
   ).catch(() => { /* non-fatal */ });
 
+  const receiptForAnchor = await prisma.executionReceipt.findUnique({
+    where: { taskId: proof.taskId },
+  });
+  if (receiptForAnchor) {
+    import("@/services/anchor")
+      .then(({ anchorVerifiedReceipt }) =>
+        anchorVerifiedReceipt({
+          id: receiptForAnchor.id,
+          taskId: receiptForAnchor.taskId,
+          taskInputHash: receiptForAnchor.taskInputHash,
+          agentVersionHashes: receiptForAnchor.agentVersionHashes,
+          spendCap: receiptForAnchor.spendCap != null ? Number(receiptForAnchor.spendCap) : undefined,
+          totalCost: receiptForAnchor.totalCost != null ? Number(receiptForAnchor.totalCost) : undefined,
+          traceRoot: receiptForAnchor.traceRoot,
+          outputHash: receiptForAnchor.outputHash ?? undefined,
+          registrySnapshotHash: receiptForAnchor.registrySnapshotHash ?? undefined,
+          paymentSummary: (receiptForAnchor.paymentSummary as unknown[]) as import("@/types/trace").PaymentSummaryItem[],
+          receiptHash: receiptForAnchor.receiptHash,
+          status: "verified",
+          createdAt: receiptForAnchor.createdAt.toISOString(),
+        })
+      )
+      .catch((err) => console.warn("[Proof] Soroban receipt anchor failed:", err));
+  }
+
   // Trigger Trustless Work escrow milestone release for proof_verified milestones.
   // Dynamic import avoids a circular dependency: proof ← escrow ← trace ← proof.
   const verifiedReceipt = await prisma.executionReceipt.findUnique({
@@ -285,6 +314,7 @@ export async function verifyProof(proofId: string): Promise<ProofRecord> {
           totalCost: verifiedReceipt.totalCost != null ? Number(verifiedReceipt.totalCost) : undefined,
           traceRoot: verifiedReceipt.traceRoot,
           outputHash: verifiedReceipt.outputHash ?? undefined,
+          registrySnapshotHash: verifiedReceipt.registrySnapshotHash ?? undefined,
           paymentSummary: (verifiedReceipt.paymentSummary as unknown[]) as import("@/types/trace").PaymentSummaryItem[],
           receiptHash: verifiedReceipt.receiptHash,
           status: "verified" as const,

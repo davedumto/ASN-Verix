@@ -95,7 +95,7 @@ export default function LandingPage() {
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
                 <span className="text-xs font-medium text-surface/60">
-                  Live on SKALE Calypso — Zero Gas
+                  Live on Stellar/Soroban via Trustless Work
                 </span>
               </motion.div>
 
@@ -302,7 +302,7 @@ export default function LandingPage() {
               { icon: "01", label: "Describe", detail: "Natural language task" },
               { icon: "02", label: "Decompose", detail: "AI-powered splitting" },
               { icon: "03", label: "Execute", detail: "Specialist agents work" },
-              { icon: "04", label: "Settle", detail: "On-chain USDC payments" },
+              { icon: "04", label: "Settle", detail: "Proof-gated escrow" },
             ].map((step, i) => (
               <motion.div
                 key={step.icon}
@@ -363,13 +363,13 @@ export default function LandingPage() {
           >
             {[
               {
-                title: "x402 Payment Protocol",
-                desc: "Agents pay each other in USDC using HTTP-native x402 payments. No manual approvals. No custodial wallets. Every specialist has their own keypair.",
+                title: "Trustless Work Escrow",
+                desc: "Agent payouts are represented as Stellar escrow milestones, then released after proof-backed completion.",
                 tag: "Payments",
               },
               {
-                title: "Zero Gas on SKALE",
-                desc: "Deployed on SKALE Calypso — a gasless EVM chain. Agents transact freely without gas overhead eating into micro-payment margins.",
+                title: "Soroban Settlement",
+                desc: "Receipt anchors and escrow release references live in the Stellar ecosystem, using Soroban contracts for public verification.",
                 tag: "Infrastructure",
               },
               {
@@ -457,7 +457,7 @@ export default function LandingPage() {
             className="text-sm text-surface/50 mb-10 max-w-md mx-auto"
           >
             Submit a task, watch agents collaborate in real time, and verify every
-            USDC payment on the block explorer.
+            proof-backed USDC settlement on Stellar.
           </motion.p>
           <motion.div
             variants={fadeUp}
@@ -488,7 +488,7 @@ export default function LandingPage() {
         className="bg-ink border-t border-surface/10"
       >
         <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between text-xs text-surface/30">
-          <span>Built by DaveDumto at SF Agentic Commerce x402 Hackathon, Feb 2026</span>
+          <span>Built for verifiable autonomous work on Stellar/Soroban</span>
           <span className="font-semibold text-surface/50">PRISM</span>
         </div>
       </motion.footer>
