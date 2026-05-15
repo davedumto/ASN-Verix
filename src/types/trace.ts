@@ -11,7 +11,19 @@ export type TraceEventType =
   | "specialist_completed"
   | "specialist_failed"
   | "task_completed"
-  | "task_failed";
+  | "task_failed"
+  // Escrow lifecycle events
+  | "escrow_created"
+  | "escrow_funded"
+  | "escrow_sync_failed"
+  | "milestone_released"
+  | "milestone_release_failed"
+  // Proof lifecycle events
+  | "proof_generation_started"
+  | "proof_generated"
+  | "proof_generation_failed"
+  | "proof_verified"
+  | "proof_verification_failed";
 
 export interface ExecutionTraceEvent {
   id: string;

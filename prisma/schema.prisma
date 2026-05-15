@@ -24,6 +24,7 @@ model Task {
   traceEvents  ExecutionTraceEvent[]
   receipt      ExecutionReceipt?
   escrow       Escrow?
+  proofs       Proof[]
 }
 
 model Subtask {
@@ -311,4 +312,38 @@ model EscrowMilestone {
   @@index([escrowId])
   @@index([status])
   @@index([subtaskId])
+}
+
+/**
+ * Proof record for a completed execution receipt.
+ *
+ * Tracks the lifecycle of a proof job: queued by receipt service, run by
+ * the deterministic TypeScript verifier (local) or Boundless/RISC Zero (live).
+ *
+ * ProofStatus: pending | running | proven | verified | failed
+ *
+ * journal is the ProofJournal JSON produced by the verifier — 5 boolean
+ * constraints that a verifier can check without re-running the full trace.
+ */
+model Proof {
+  id            String    @id @default(cuid())
+  receiptId     String    @unique
+  taskId        String
+  receiptHash   String
+  schemaVersion String    @default("1.0")
+  /// ProofStatus: pending | running | proven | verified | failed
+  status        String    @default("pending")
+  programId     String?
+  journal       Json?
+  artifactUri   String?
+  errorMsg      String?
+  createdAt     DateTime  @default(now())
+  provenAt      DateTime?
+  verifiedAt    DateTime?
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([receiptId])
+  @@index([status])
 }

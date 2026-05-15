@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db";
 import { sha256, hashCanonical } from "@/lib/hash";
 import { computeTraceRoot } from "@/services/trace";
 import { ExecutionReceipt, PaymentSummaryItem } from "@/types/trace";
+import { enqueueJob, startJob, completeJob, failJob } from "@/services/jobs";
+import { env } from "@/lib/env";
 
 /**
  * Receipt Service — Issue #15
@@ -53,6 +55,22 @@ function toReceipt(row: {
     status: row.status as ExecutionReceipt["status"],
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+// ── Proof job wiring ──────────────────────────────────────────────────────────
+
+async function runProofJob(receipt: ExecutionReceipt): Promise<void> {
+  const job = await enqueueJob("proof_generation", { receiptId: receipt.id }, receipt.taskId);
+  const claimed = await startJob(job.id);
+  if (!claimed) return; // another worker claimed it
+
+  try {
+    const { generateProof } = await import("@/services/proof");
+    await generateProof(receipt);
+    await completeJob(job.id, { receiptId: receipt.id });
+  } catch (err) {
+    await failJob(job.id, err instanceof Error ? err.message : String(err));
+  }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -160,7 +178,16 @@ export async function generateReceipt(input: ReceiptInput): Promise<ExecutionRec
     },
   });
 
-  return toReceipt(row);
+  const receipt = toReceipt(row);
+
+  // Fire-and-forget proof job when proof mode is active
+  if (env.PROOF_MODE !== "disabled") {
+    runProofJob(receipt).catch((err) =>
+      console.error("[receipt] proof job enqueue failed:", err)
+    );
+  }
+
+  return receipt;
 }
 
 export async function getReceipt(taskId: string): Promise<ExecutionReceipt | null> {
