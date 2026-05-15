@@ -57,6 +57,47 @@ npx prisma generate
 npm run dev
 ```
 
+## Golden-Path Demo Data
+
+Seed the judge demo scenario with one repeatable task and three specialist
+agents:
+
+```bash
+npm run demo:seed
+```
+
+The seeded prompt is:
+
+```text
+Audit a Soroban escrow milestone release flow for security risks, compare the market positioning against existing AI work platforms, and produce a concise investor-ready launch memo with proof-backed settlement requirements.
+```
+
+Expected demo flow:
+
+1. Coordinator snapshots the agent registry and routes to CodeAuditor,
+   MarketAnalyst, and CreativeWriter.
+2. Spend-cap enforcement checks the $5.00 USDC demo cap.
+3. Specialist executions create trace events and Stellar/Trustless Work payout
+   intents.
+4. Receipt generation commits to the input, agent versions, trace root, spend
+   cap, outputs, and payout summary.
+5. Proof verification can unlock Trustless Work milestone release.
+
+Reset only demo-owned task data:
+
+```bash
+npm run demo:reset -- --force
+```
+
+Reset the demo task plus demo-owned agents:
+
+```bash
+npm run demo:reset -- --force --include-agents
+```
+
+The reset script is intentionally scoped to `ownerId = "demo:golden-path"` and
+the deterministic demo task ID. It refuses to run without `--force`.
+
 Run checks:
 
 ```bash

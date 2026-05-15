@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { prisma } from "@/lib/db";
+import { DEMO_SPECIALISTS } from "@/lib/demo-scenario";
 import { AgentVersion, ProofPolicy, Specialist } from "@/types/specialist";
 
 /**
@@ -9,53 +10,7 @@ import { AgentVersion, ProofPolicy, Specialist } from "@/types/specialist";
  * specialists are seeded on first use so demo agents survive restarts.
  */
 
-const DEFAULT_SPECIALISTS: Specialist[] = [
-  {
-    id: "specialist_code_auditor",
-    name: "CodeAuditor",
-    description: "Security vulnerability detection, code review, and best practices analysis for smart contracts and application code.",
-    endpoint: "/api/specialists/code-auditor/execute",
-    walletAddress: "G" + "A".repeat(55),
-    capabilities: ["security-analysis", "code-review", "vulnerability-detection", "smart-contract-audit"],
-    priceUsdc: 1.0,
-    reputation: 95,
-    totalJobs: 142,
-    status: "online",
-    aiModel: "claude",
-    proofPolicy: "receipt-proof",
-    currentVersion: 1,
-  },
-  {
-    id: "specialist_market_analyst",
-    name: "MarketAnalyst",
-    description: "Financial analysis, market research, competitive intelligence, and investment analysis for DeFi and traditional markets.",
-    endpoint: "/api/specialists/market-analyst/execute",
-    walletAddress: "G" + "B".repeat(55),
-    capabilities: ["market-research", "financial-analysis", "competitive-intelligence", "defi-analytics"],
-    priceUsdc: 0.75,
-    reputation: 88,
-    totalJobs: 98,
-    status: "online",
-    aiModel: "openai",
-    proofPolicy: "trace-only",
-    currentVersion: 1,
-  },
-  {
-    id: "specialist_creative_writer",
-    name: "CreativeWriter",
-    description: "Polished business writing, reports, investment memos, whitepapers, and professional documents with structured reasoning.",
-    endpoint: "/api/specialists/creative-writer/execute",
-    walletAddress: "G" + "C".repeat(55),
-    capabilities: ["creative-writing", "report-writing", "business-documents", "whitepaper-drafting"],
-    priceUsdc: 0.5,
-    reputation: 92,
-    totalJobs: 215,
-    status: "online",
-    aiModel: "openai",
-    proofPolicy: "escrow-eligible",
-    currentVersion: 1,
-  },
-];
+const DEFAULT_SPECIALISTS: Specialist[] = DEMO_SPECIALISTS;
 
 let seedPromise: Promise<void> | null = null;
 
