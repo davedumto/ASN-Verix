@@ -38,10 +38,35 @@ export async function fetchStellarAccount(address: string): Promise<{
     asset_issuer?: string;
   }>;
 }> {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 6000);
   const url = `${STELLAR_CONFIG.horizonUrl.replace(/\/$/, "")}/accounts/${address}`;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) {
-    throw new Error(`Stellar Horizon account lookup failed: ${res.status}`);
+  console.log(`[Stellar] fetchStellarAccount → ${url}`);
+  try {
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+
+    if (res.status === 404) {
+      // Account not yet created/funded on this Stellar network — not an error.
+      console.log(`[Stellar] account ${address.slice(0, 8)}… not found on network (unfunded)`);
+      return { id: address, balances: [] };
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`Stellar Horizon ${res.status}: ${body.slice(0, 120)}`);
+    }
+
+    return res.json();
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Stellar Horizon timed out after 6s (url: ${url})`);
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
   }
-  return res.json();
 }

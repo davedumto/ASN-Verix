@@ -89,11 +89,18 @@ export async function createPayment(
 export async function verifyPayment(txHash: string): Promise<boolean> {
   if (txHash.startsWith("stellar-intent-")) return true;
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
   try {
-    const res = await fetch(stellarTxExplorerUrl(txHash), { method: "HEAD" });
+    const res = await fetch(stellarTxExplorerUrl(txHash), {
+      method: "HEAD",
+      signal: controller.signal,
+    });
     return res.ok;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

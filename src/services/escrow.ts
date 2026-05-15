@@ -226,27 +226,35 @@ class TrustlessWorkAdapter implements EscrowProvider {
   private async request<T>(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    timeoutMs = 30_000
   ): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": this.apiKey,
-      },
-      body: body != null ? JSON.stringify(body) : undefined,
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": this.apiKey,
+        },
+        body: body != null ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
 
-    if (!res.ok) {
-      let errMsg = `Trustless Work API error ${res.status}`;
-      try {
-        const json = await res.json();
-        errMsg = json.message ?? json.error ?? errMsg;
-      } catch { /* ignore parse failure */ }
-      throw new Error(errMsg);
+      if (!res.ok) {
+        let errMsg = `Trustless Work API error ${res.status}`;
+        try {
+          const json = await res.json();
+          errMsg = json.message ?? json.error ?? errMsg;
+        } catch { /* ignore parse failure */ }
+        throw new Error(errMsg);
+      }
+
+      return res.json() as Promise<T>;
+    } finally {
+      clearTimeout(timer);
     }
-
-    return res.json() as Promise<T>;
   }
 
   private async sendTransaction(unsignedTransaction: string): Promise<string | undefined> {

@@ -18,13 +18,16 @@ interface ChatSidebarProps {
     onDeleteTask: (taskId: string) => void;
     walletBalance: number;
     walletAssetCode: string;
+    walletAssetIssuer: string | null;
     nativeBalance: number | null;
     hasConfiguredAsset: boolean;
+    hasAnyRequestedAsset: boolean;
     walletAddress: string;
     walletSource: "connected-wallet" | "coordinator";
     walletProvider: WalletProviderId | null;
     walletProviderName: string | null;
     isWalletConnecting: boolean;
+    isWalletBalanceRefreshing: boolean;
     onOpenWalletPicker: () => void;
     onDisconnectWallet: () => void;
     networkStatus: "connected" | "disconnected" | "loading";
@@ -45,13 +48,16 @@ export default function ChatSidebar({
     onDeleteTask,
     walletBalance,
     walletAssetCode,
+    walletAssetIssuer,
     nativeBalance,
     hasConfiguredAsset,
+    hasAnyRequestedAsset,
     walletAddress,
     walletSource,
     walletProvider,
     walletProviderName,
     isWalletConnecting,
+    isWalletBalanceRefreshing,
     onOpenWalletPicker,
     onDisconnectWallet,
     networkStatus,
@@ -268,7 +274,7 @@ export default function ChatSidebar({
                                             {walletSource === "connected-wallet" ? "Connected wallet" : "Settlement account"}
                                         </p>
                                         <p className="text-2xl font-bold font-mono text-white leading-tight">
-                                            {networkStatus === "loading"
+                                            {isWalletBalanceRefreshing && !walletBalance && nativeBalance === null
                                                 ? "..."
                                                 : (walletBalance > 0 ? walletBalance : nativeBalance ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             <span className="text-xs font-medium text-white/40 ml-1">
@@ -277,7 +283,9 @@ export default function ChatSidebar({
                                         </p>
                                         {!hasConfiguredAsset && nativeBalance !== null && (
                                             <p className="mt-1 text-[10px] text-amber-300/80">
-                                                No configured {walletAssetCode} trustline or balance; showing XLM.
+                                                {hasAnyRequestedAsset
+                                                    ? `${walletAssetCode} issuer differs from configured escrow asset.`
+                                                    : `No configured ${walletAssetCode} trustline or balance; showing XLM.`}
                                             </p>
                                         )}
                                     </div>
@@ -292,7 +300,7 @@ export default function ChatSidebar({
                                             <div className="flex items-center gap-1.5">
                                                 <span className={`w-1.5 h-1.5 rounded-full ${statusColor}`} />
                                                 <span className="text-[10px] text-white/50">
-                                                    {networkStatus === "connected" ? "Stellar Testnet" : networkStatus === "loading" ? "Connecting..." : "Disconnected"}
+                                                    {isWalletBalanceRefreshing ? "Syncing balance..." : networkStatus === "connected" ? "Stellar Testnet" : networkStatus === "loading" ? "Connecting..." : "Disconnected"}
                                                 </span>
                                             </div>
                                         </div>
@@ -306,6 +314,14 @@ export default function ChatSidebar({
                                                 {walletProviderName ?? (walletProvider ? walletProvider : "Trustless Work")}
                                             </span>
                                         </div>
+                                        {walletAssetIssuer && (
+                                            <div className="flex items-center justify-between gap-3">
+                                                <span className="text-[10px] text-white/30">Asset issuer</span>
+                                                <span className="truncate text-[10px] font-mono text-white/50">
+                                                    {walletAssetIssuer.slice(0, 8)}...{walletAssetIssuer.slice(-6)}
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="border-t border-white/8 px-4 py-2">
                                         {walletSource === "connected-wallet" ? (
@@ -327,7 +343,7 @@ export default function ChatSidebar({
                                                 ) : (
                                                     <Plug className="h-3 w-3" aria-hidden="true" />
                                                 )}
-                                                Connect Freighter
+                                                Connect wallet
                                             </button>
                                         )}
                                     </div>
@@ -424,7 +440,7 @@ export default function ChatSidebar({
                         <span className={`w-2 h-2 rounded-full ${statusColor}`} />
                         <span className="text-xs text-white/50">
                             {walletSource === "connected-wallet"
-                                ? "Freighter wallet"
+                                ? "Connected wallet"
                                 : networkStatus === "connected"
                                     ? "Coordinator wallet"
                                     : networkStatus === "loading"
@@ -448,7 +464,7 @@ export default function ChatSidebar({
                     ) : (
                         <Plug className="h-3 w-3" aria-hidden="true" />
                     )}
-                    {walletSource === "connected-wallet" ? "Disconnect wallet" : "Connect Freighter"}
+                    {walletSource === "connected-wallet" ? "Disconnect wallet" : "Connect wallet"}
                 </button>
             </div>
             </aside>

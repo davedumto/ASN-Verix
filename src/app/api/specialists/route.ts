@@ -36,23 +36,25 @@ function toAiModel(raw: string | undefined): AiModelProvider {
 }
 
 export async function GET() {
-  const specialists = await getAllSpecialists();
-
-  // Batch-fetch receipt-backed reputation stats so the catalog can show
-  // verified vs. total job counts without a separate client request.
-  const repStats = await getReputationStatsForAll(specialists.map((s) => s.id)).catch(() => ({} as Record<string, { verifiedJobs: number }>));
-
-  // Strip encrypted API keys — only send masked version to client
-  const safe = specialists.map((s) => ({
-    ...s,
-    apiKey: undefined,
-    apiKeyMasked: s.apiKeyMasked || undefined,
-    // Omit ownerId from client responses (server-side ownership detail)
-    ownerId: undefined,
-    verifiedJobs: repStats[s.id]?.verifiedJobs ?? 0,
-  }));
-
-  return NextResponse.json(safe);
+  console.log("[specialists] GET /api/specialists — start");
+  try {
+    const specialists = await getAllSpecialists();
+    console.log(`[specialists] ok — ${specialists.length} specialists`);
+    const repStats = await getReputationStatsForAll(specialists.map((s) => s.id)).catch(() => ({} as Record<string, { verifiedJobs: number }>));
+    const safe = specialists.map((s) => ({
+      ...s,
+      apiKey: undefined,
+      apiKeyMasked: s.apiKeyMasked || undefined,
+      ownerId: undefined,
+      verifiedJobs: repStats[s.id]?.verifiedJobs ?? 0,
+    }));
+    return NextResponse.json(safe);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[specialists] error: ${msg}`);
+    if (error instanceof Error) console.error(error.stack);
+    return NextResponse.json({ error: "Failed to list specialists" }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {

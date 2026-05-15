@@ -58,6 +58,21 @@ function cacheWallet(wallet: ConnectedWallet) {
   localStorage.setItem(CONNECTED_WALLET_PROVIDER_STORAGE_KEY, wallet.provider);
 }
 
+export function getCachedConnectedWallet(): ConnectedWallet | null {
+  if (typeof window === "undefined") return null;
+
+  const cachedAddress = localStorage.getItem(CONNECTED_WALLET_STORAGE_KEY);
+  const cachedProvider =
+    localStorage.getItem(CONNECTED_WALLET_PROVIDER_STORAGE_KEY) ?? "stellar-wallets-kit";
+  if (!cachedAddress) return null;
+
+  return {
+    address: cachedAddress,
+    provider: cachedProvider,
+    providerName: cachedProvider,
+  };
+}
+
 export async function getWalletOptions(): Promise<WalletProviderOption[]> {
   initKit();
   const wallets = await StellarWalletsKit.refreshSupportedWallets();
@@ -86,16 +101,7 @@ export async function getAuthorizedWallet(): Promise<ConnectedWallet | null> {
   if (typeof window === "undefined") return null;
   initKit();
 
-  const cachedAddress = localStorage.getItem(CONNECTED_WALLET_STORAGE_KEY);
-  const cachedProvider =
-    localStorage.getItem(CONNECTED_WALLET_PROVIDER_STORAGE_KEY) ?? "stellar-wallets-kit";
-  if (!cachedAddress) return null;
-
-  return {
-    address: cachedAddress,
-    provider: cachedProvider,
-    providerName: cachedProvider,
-  };
+  return getCachedConnectedWallet();
 }
 
 export async function connectWallet(providerId?: WalletProviderId): Promise<ConnectedWallet> {

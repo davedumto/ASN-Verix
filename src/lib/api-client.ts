@@ -145,7 +145,16 @@ export async function deleteSpecialist(id: string): Promise<void> {
 
 export async function getWalletBalance(address?: string): Promise<WalletBalance> {
   const query = address ? `?address=${encodeURIComponent(address)}` : "";
-  return request(`/api/wallet/balance${query}`);
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 8000);
+
+  try {
+    return await request(`/api/wallet/balance${query}`, {
+      signal: controller.signal,
+    });
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
 }
 
 export async function getTaskHistory(): Promise<Task[]> {

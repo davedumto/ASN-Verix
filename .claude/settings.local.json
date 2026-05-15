@@ -32,7 +32,8 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Ebubechi\\\\Documents\\\\codes\\\\my-projects\\\\boundless-hackathon\\\\agent-specialization-network\" -Recurse -Directory)",
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(Sort-Object)",
-      "Bash(xargs grep -l \"SKALE\\\\|ethers\\\\|blockchain\")"
+      "Bash(xargs grep -l \"SKALE\\\\|ethers\\\\|blockchain\")",
+      "Bash(Remove-Item \"c:\\\\Users\\\\Ebubechi\\\\Documents\\\\codes\\\\my-projects\\\\boundless-hackathon\\\\agent-specialization-network\\\\src\\\\proxy.ts\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\Ebubechi\\Documents\\codes\\my-projects\\boundless-hackathon\\agent-specialization-network\\src\\app\\trace",

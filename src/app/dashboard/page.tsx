@@ -23,11 +23,12 @@ import { Specialist } from "@/types/specialist";
 import {
   clearCachedConnectedWallet,
   connectWallet,
-  getAuthorizedWallet,
+  getCachedConnectedWallet,
   getWalletOptions,
   WalletProviderId,
 } from "@/lib/wallet-connect";
 import { DEMO_GOLDEN_PROMPT, DEMO_SPEND_CAP_USDC } from "@/lib/demo-scenario";
+import { WalletBalance } from "@/types/payment";
 
 // Pure helper — defined outside component so it is stable across renders
 function traceEventToThinkingStep(e: ExecutionTraceEvent): ThinkingStep {
@@ -49,6 +50,31 @@ function traceEventToThinkingStep(e: ExecutionTraceEvent): ThinkingStep {
   };
 }
 
+const WALLET_BALANCE_CACHE_KEY = "verix_wallet_balance_cache";
+
+function readCachedWalletBalance(address: string): WalletBalance | null {
+  if (typeof window === "undefined" || !address) return null;
+
+  try {
+    const raw = localStorage.getItem(WALLET_BALANCE_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as WalletBalance & { cachedAt?: number };
+    if (cached.address !== address) return null;
+    if (cached.error) return null;
+    return cached;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedWalletBalance(balance: WalletBalance) {
+  if (typeof window === "undefined" || !balance.address?.startsWith("G")) return;
+  localStorage.setItem(
+    WALLET_BALANCE_CACHE_KEY,
+    JSON.stringify({ ...balance, cachedAt: Date.now() })
+  );
+}
+
 export default function Dashboard() {
   // Core state
   const [taskStatus, setTaskStatus] = useState<TaskStatus | null>(null);
@@ -59,8 +85,10 @@ export default function Dashboard() {
   const [estimatedCost, setEstimatedCost] = useState<number | null>(null);
   const [walletBalance, setWalletBalance] = useState(0);
   const [walletAssetCode, setWalletAssetCode] = useState("USDC");
+  const [walletAssetIssuer, setWalletAssetIssuer] = useState<string | null>(null);
   const [nativeBalance, setNativeBalance] = useState<number | null>(null);
   const [hasConfiguredAsset, setHasConfiguredAsset] = useState(true);
+  const [hasAnyRequestedAsset, setHasAnyRequestedAsset] = useState(true);
   const [walletAddress, setWalletAddress] = useState("");
   const [walletSource, setWalletSource] = useState<"connected-wallet" | "coordinator">("coordinator");
   const [walletProvider, setWalletProvider] = useState<WalletProviderId | null>(null);
@@ -73,6 +101,8 @@ export default function Dashboard() {
     availability: "available" | "extension-required" | "external";
   }>>([]);
   const [isWalletConnecting, setIsWalletConnecting] = useState(false);
+  const [isWalletOptionsLoading, setIsWalletOptionsLoading] = useState(false);
+  const [isWalletBalanceRefreshing, setIsWalletBalanceRefreshing] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [networkStatus, setNetworkStatus] = useState<
     "connected" | "disconnected" | "loading"
@@ -109,6 +139,7 @@ export default function Dashboard() {
 
   // Server event tracking
   const syncedEventsCount = useRef(0);
+  const walletBalanceRequestId = useRef(0);
 
   // SSE connection for live trace events
   const sseRef = useRef<EventSource | null>(null);
@@ -168,21 +199,64 @@ export default function Dashboard() {
     e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
   };
 
-  // Fetch wallet balance
-  const fetchWalletBalance = useCallback(async (address?: string) => {
-    try {
-      const data = await getWalletBalance(address);
+  const applyWalletBalance = useCallback(
+    (data: WalletBalance, fallbackSource: "connected-wallet" | "coordinator") => {
       setWalletBalance(data.balance);
       setWalletAssetCode(data.assetCode ?? "USDC");
+      setWalletAssetIssuer(data.assetIssuer ?? null);
       setNativeBalance(data.nativeBalance ?? null);
       setHasConfiguredAsset(data.hasConfiguredAsset ?? true);
+      setHasAnyRequestedAsset(data.hasAnyRequestedAsset ?? true);
       setWalletAddress(data.address);
-      setWalletSource(data.source ?? (address ? "connected-wallet" : "coordinator"));
+      setWalletSource(data.source ?? fallbackSource);
+    },
+    []
+  );
+
+  // Fetch wallet balance without blocking the connected account shell.
+  const fetchWalletBalance = useCallback(async (address?: string) => {
+    const requestId = walletBalanceRequestId.current + 1;
+    walletBalanceRequestId.current = requestId;
+    setIsWalletBalanceRefreshing(true);
+    if (address?.startsWith("G")) {
       setNetworkStatus("connected");
-    } catch {
-      setNetworkStatus("disconnected");
+    } else {
+      setNetworkStatus("loading");
     }
-  }, []);
+
+    try {
+      const data = await getWalletBalance(address);
+      if (requestId !== walletBalanceRequestId.current) return;
+      applyWalletBalance(data, address ? "connected-wallet" : "coordinator");
+      if (data.error) {
+        setWalletError(data.error);
+      } else {
+        writeCachedWalletBalance(data);
+        setWalletError(null);
+      }
+      setNetworkStatus("connected");
+    } catch (error) {
+      if (requestId !== walletBalanceRequestId.current) return;
+      if (address?.startsWith("G")) {
+        setNetworkStatus("connected");
+        setWalletError(error instanceof Error ? error.message : "Balance refresh failed.");
+      } else {
+        setNetworkStatus("disconnected");
+      }
+    } finally {
+      if (requestId === walletBalanceRequestId.current) {
+        setIsWalletBalanceRefreshing(false);
+      }
+    }
+  }, [applyWalletBalance]);
+
+  const refreshActiveWalletBalance = useCallback(() => {
+    void fetchWalletBalance(
+      walletSource === "connected-wallet" && walletAddress.startsWith("G")
+        ? walletAddress
+        : undefined
+    );
+  }, [fetchWalletBalance, walletAddress, walletSource]);
 
   const handleConnectWallet = useCallback(async (providerId: WalletProviderId) => {
     setIsWalletConnecting(true);
@@ -193,8 +267,10 @@ export default function Dashboard() {
       setWalletProvider(wallet.provider);
       setWalletProviderName(wallet.providerName);
       setWalletSource("connected-wallet");
+      setWalletAddress(wallet.address);
+      setNetworkStatus("connected");
       setShowWalletPicker(false);
-      await fetchWalletBalance(wallet.address);
+      void fetchWalletBalance(wallet.address);
     } catch (error) {
       setWalletError(error instanceof Error ? error.message : "Wallet connection failed.");
       setNetworkStatus("disconnected");
@@ -209,8 +285,12 @@ export default function Dashboard() {
     setWalletProviderName(null);
     setWalletSource("coordinator");
     setWalletError(null);
+    setWalletAddress("");
+    setWalletBalance(0);
+    setWalletAssetIssuer(null);
+    setNativeBalance(null);
     setNetworkStatus("loading");
-    await fetchWalletBalance();
+    void fetchWalletBalance();
   }, [fetchWalletBalance]);
 
   // Fetch task history
@@ -226,17 +306,24 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    getAuthorizedWallet()
-      .then((wallet) => {
-        if (wallet) {
-          setWalletProvider(wallet.provider);
-          setWalletProviderName(wallet.providerName);
-          setWalletSource("connected-wallet");
-          return fetchWalletBalance(wallet.address);
-        }
-        return fetchWalletBalance();
-      })
-      .catch(() => fetchWalletBalance());
+    const cachedWallet = getCachedConnectedWallet();
+    if (cachedWallet) {
+      setWalletProvider(cachedWallet.provider);
+      setWalletProviderName(cachedWallet.providerName);
+      setWalletAddress(cachedWallet.address);
+      setWalletSource("connected-wallet");
+      setNetworkStatus("connected");
+
+      const cachedBalance = readCachedWalletBalance(cachedWallet.address);
+      if (cachedBalance) {
+        applyWalletBalance(cachedBalance, "connected-wallet");
+      }
+
+      void fetchWalletBalance(cachedWallet.address);
+    } else {
+      void fetchWalletBalance();
+    }
+
     fetchHistory();
     getSpecialists()
       .then((data) => {
@@ -251,8 +338,17 @@ export default function Dashboard() {
       .catch(() => { });
     // Ensure the session is initialised and cached in localStorage
     getOrInitSession().then(setSessionId).catch(() => { });
-    getWalletOptions().then(setWalletOptions).catch(() => setWalletOptions([]));
-  }, [fetchWalletBalance, fetchHistory]);
+  }, [applyWalletBalance, fetchWalletBalance, fetchHistory]);
+
+  useEffect(() => {
+    if (!showWalletPicker || walletOptions.length > 0 || isWalletOptionsLoading) return;
+
+    setIsWalletOptionsLoading(true);
+    getWalletOptions()
+      .then(setWalletOptions)
+      .catch(() => setWalletOptions([]))
+      .finally(() => setIsWalletOptionsLoading(false));
+  }, [isWalletOptionsLoading, showWalletPicker, walletOptions.length]);
 
   // Add a chat message
   const addMessage = useCallback(
@@ -432,13 +528,13 @@ export default function Dashboard() {
             approvedByWallet: task.approvedByWallet,
             approvalResultHash: task.approvalResultHash,
           });
-          fetchWalletBalance();
+          refreshActiveWalletBalance();
           clearInterval(interval);
         }
         if (task.status === "failed") {
           finalizeThinking(elapsedTime);
           addMessage("system", "Task failed.", "error");
-          fetchWalletBalance();
+          refreshActiveWalletBalance();
           clearInterval(interval);
         }
       } catch {
@@ -447,7 +543,7 @@ export default function Dashboard() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [taskId, addMessage, syncEvents, syncTraceEvents, fetchWalletBalance]);
+  }, [taskId, addMessage, syncEvents, syncTraceEvents, refreshActiveWalletBalance]);
 
   // Step 1: User submits → show confirmation
   const handleRequestSubmit = () => {
@@ -654,7 +750,7 @@ export default function Dashboard() {
     thinkingIdRef.current = null;
     sseRef.current?.close();
     sseRef.current = null;
-    fetchWalletBalance();
+    refreshActiveWalletBalance();
     fetchHistory();
     setSidebarOpen(false);
     if (inputRef.current) {
@@ -714,13 +810,16 @@ export default function Dashboard() {
         sessionId={sessionId}
         walletBalance={walletBalance}
         walletAssetCode={walletAssetCode}
+        walletAssetIssuer={walletAssetIssuer}
         nativeBalance={nativeBalance}
         hasConfiguredAsset={hasConfiguredAsset}
+        hasAnyRequestedAsset={hasAnyRequestedAsset}
         walletAddress={walletAddress}
         walletSource={walletSource}
         walletProvider={walletProvider}
         walletProviderName={walletProviderName}
         isWalletConnecting={isWalletConnecting}
+        isWalletBalanceRefreshing={isWalletBalanceRefreshing}
         onOpenWalletPicker={() => setShowWalletPicker(true)}
         onDisconnectWallet={handleDisconnectWallet}
         networkStatus={networkStatus}
@@ -779,14 +878,18 @@ export default function Dashboard() {
 
           {/* Wallet badge */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-secondary border border-border">
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${networkStatus === "connected"
-                ? "bg-success"
-                : networkStatus === "loading"
-                  ? "bg-warning animate-pulse"
-                  : "bg-error"
-                }`}
-            />
+            {isWalletBalanceRefreshing ? (
+              <LoaderCircle className="h-3 w-3 animate-spin text-ink-muted" aria-hidden="true" />
+            ) : (
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${networkStatus === "connected"
+                  ? "bg-success"
+                  : networkStatus === "loading"
+                    ? "bg-warning animate-pulse"
+                    : "bg-error"
+                  }`}
+              />
+            )}
             <span className="text-xs font-mono font-semibold text-ink">
               ${walletBalance.toFixed(2)}
               <span className="ml-1 text-[10px] text-ink-muted">{walletAssetCode}</span>
@@ -1052,6 +1155,30 @@ export default function Dashboard() {
             )}
 
             <div className="grid gap-2">
+              {isWalletOptionsLoading && walletOptions.length === 0 && (
+                <div className="flex items-center justify-center gap-2 border border-border bg-surface-secondary px-4 py-6 text-sm text-ink-muted">
+                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  Detecting available Stellar wallets...
+                </div>
+              )}
+
+              {!isWalletOptionsLoading && walletOptions.length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWalletOptions([]);
+                    setIsWalletOptionsLoading(true);
+                    getWalletOptions()
+                      .then(setWalletOptions)
+                      .catch(() => setWalletOptions([]))
+                      .finally(() => setIsWalletOptionsLoading(false));
+                  }}
+                  className="border border-border bg-surface-secondary px-4 py-3 text-sm text-ink-secondary hover:border-border-strong hover:text-ink"
+                >
+                  Retry wallet detection
+                </button>
+              )}
+
               {walletOptions.map((option) => (
                 <button
                   key={option.id}
@@ -1123,8 +1250,11 @@ export default function Dashboard() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-ink-muted">Wallet Balance</span>
-                <span className="font-mono text-ink">
-                  ${walletBalance.toFixed(2)} USDC
+                <span className="inline-flex items-center gap-1.5 font-mono text-ink">
+                  {isWalletBalanceRefreshing && (
+                    <LoaderCircle className="h-3 w-3 animate-spin text-ink-muted" aria-hidden="true" />
+                  )}
+                  ${walletBalance.toFixed(2)} {walletAssetCode}
                 </span>
               </div>
               {nativeBalance !== null && (
@@ -1132,6 +1262,14 @@ export default function Dashboard() {
                   <span className="text-ink-muted">Native Balance</span>
                   <span className="font-mono text-ink">
                     {nativeBalance.toFixed(2)} XLM
+                  </span>
+                </div>
+              )}
+              {walletAssetIssuer && (
+                <div className="flex justify-between gap-3 text-sm">
+                  <span className="text-ink-muted">Asset Issuer</span>
+                  <span className="truncate font-mono text-xs text-ink">
+                    {walletAssetIssuer}
                   </span>
                 </div>
               )}
@@ -1147,13 +1285,22 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {estimatedCost !== null && estimatedCost > walletBalance && (
+            {estimatedCost !== null && !isWalletBalanceRefreshing && estimatedCost > walletBalance && (
               <div className="bg-error/10 text-error text-sm p-3 rounded-lg mb-4">
                 Insufficient balance. You need ${estimatedCost.toFixed(2)} but
-                only have ${walletBalance.toFixed(2)} USDC.
-                {!hasConfiguredAsset && nativeBalance !== null
-                  ? ` Your wallet has ${nativeBalance.toFixed(2)} XLM, but no balance for the configured USDC issuer.`
-                  : ""}
+                only have ${walletBalance.toFixed(2)} {walletAssetCode}.
+                {!hasConfiguredAsset && hasAnyRequestedAsset
+                  ? " Your wallet has USDC, but it is not issued by the configured escrow asset issuer."
+                  : !hasConfiguredAsset && nativeBalance !== null
+                    ? ` Your wallet has ${nativeBalance.toFixed(2)} XLM, but no balance for the configured USDC issuer.`
+                    : ""}
+              </div>
+            )}
+
+            {!hasConfiguredAsset && hasAnyRequestedAsset && (
+              <div className="bg-warning/10 text-warning text-sm p-3 rounded-lg mb-4">
+                This wallet has {walletAssetCode}, but its issuer does not match the configured escrow asset issuer.
+                The balance is visible for review; live escrow funding may still require the configured asset.
               </div>
             )}
 
@@ -1201,7 +1348,7 @@ export default function Dashboard() {
               <button
                 onClick={handleConfirmSubmit}
                 disabled={
-                  (estimatedCost !== null && estimatedCost > walletBalance) ||
+                  (estimatedCost !== null && !isWalletBalanceRefreshing && estimatedCost > walletBalance) ||
                   isSubmitting ||
                   walletSource !== "connected-wallet"
                 }
