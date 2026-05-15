@@ -26,19 +26,43 @@ import { env } from "@/lib/env";
 
 const EXPLORER_URL = "https://staging-utter-unripe-menkar.explorer.staging-v3.skalenodes.com";
 
-// Claude for code analysis (superior at code understanding)
 const anthropic = new Anthropic({
   apiKey: env.CLAUDE_API_KEY,
 });
 
-// OpenAI for writing and general analysis
 const openai = new OpenAI({
   apiKey: env.OPENAI_API_KEY,
 });
 
-/**
- * Helper: push an event to the task's event log
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// STAGE TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface InitResult {
+  effectiveCap: number;
+}
+
+interface RouteResult {
+  subtasks: Subtask[];
+}
+
+interface SpendCapResult {
+  passed: boolean;
+  estimatedTotal: number;
+  effectiveCap: number;
+}
+
+interface ExecuteResult {
+  deliverables: Array<{ title: string; content: string; specialistName: string }>;
+  payments: Payment[];
+  totalSpent: number;
+  subtasks: Subtask[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPER
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function pushEvent(
   taskId: string,
   type: TaskEvent["type"],
@@ -48,36 +72,38 @@ async function pushEvent(
   await appendExecutionEvent(taskId, { type, message, status });
 }
 
-/**
- * Main coordinator execution function
- * Orchestrates the full task lifecycle with real AI specialists
- * Includes spend cap enforcement and audit trail
- */
-export async function executeCoordinator(
+// ─────────────────────────────────────────────────────────────────────────────
+// STAGE 1: INITIALIZE
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function stageInitialize(
   taskId: string,
   description: string,
   spendCap?: number
-): Promise<void> {
-  console.log(`[Coordinator] Starting task ${taskId}: ${description}`);
+): Promise<InitResult> {
+  const effectiveCap = spendCap ?? 50;
 
   await pushEvent(taskId, "coordinator", "Coordinator received task. Analyzing with AI...", "info");
 
-  // ── TRACE: coordinator_start ─────────────────────────────────────────────
   await recordTraceEvent(taskId, "coordinator_start", "coordinator",
     "Coordinator received task and began decomposition",
     { inputHash: sha256(description), metadata: { descriptionLength: description.length } }
   ).catch((e) => console.warn("[Trace] coordinator_start failed:", e));
 
-  // Phase 1: AI-powered task decomposition
+  return { effectiveCap };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STAGE 2: ROUTE
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function stageRoute(taskId: string, description: string): Promise<RouteResult> {
   const subtasks = await decomposeTaskWithAI(description);
 
-  await transitionExecution(taskId, "discovering", {
-    subtasks,
-  });
+  await transitionExecution(taskId, "discovering", { subtasks });
 
   await pushEvent(taskId, "coordinator", `AI selected ${subtasks.length} specialist(s) for this task.`, "success");
 
-  // ── TRACE: task_decomposed ───────────────────────────────────────────────
   const subtaskNames = subtasks.map((s) => s.specialistName ?? "unknown");
   await recordTraceEvent(taskId, "task_decomposed", "coordinator",
     `Task decomposed into ${subtasks.length} subtask(s): ${subtaskNames.join(", ")}`,
@@ -90,47 +116,63 @@ export async function executeCoordinator(
   for (const s of subtasks) {
     await pushEvent(taskId, "coordinator", `Specialist assigned: ${s.specialistName} ($${s.cost?.toFixed(2)} USDC)`, "info");
 
-    // ── TRACE: specialist_assigned ─────────────────────────────────────────
     await recordTraceEvent(taskId, "specialist_assigned", s.specialistName ?? "unknown",
       `${s.specialistName} assigned for capability: ${s.capability}`,
       { metadata: { specialistName: s.specialistName, capability: s.capability, cost: s.cost, agentVersionId: s.agentVersionId, agentVersion: s.agentVersion, versionHash: s.versionHash } }
     ).catch((e) => console.warn("[Trace] specialist_assigned failed:", e));
   }
 
-  // Spend cap enforcement
-  const estimatedTotal = subtasks.reduce((sum, s) => sum + (s.cost || 0), 0);
-  const effectiveCap = spendCap ?? 50; // default $50 cap
+  return { subtasks };
+}
 
-  // ── TRACE: spend_cap_check ───────────────────────────────────────────────
-  const capPassed = estimatedTotal <= effectiveCap;
-  await recordTraceEvent(taskId, capPassed ? "spend_cap_check" : "spend_cap_exceeded", "coordinator",
-    capPassed
+// ─────────────────────────────────────────────────────────────────────────────
+// STAGE 3: SPEND CAP
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function stageSpendCap(
+  taskId: string,
+  subtasks: Subtask[],
+  effectiveCap: number
+): Promise<SpendCapResult> {
+  const estimatedTotal = subtasks.reduce((sum, s) => sum + (s.cost || 0), 0);
+  const passed = estimatedTotal <= effectiveCap;
+
+  await recordTraceEvent(taskId, passed ? "spend_cap_check" : "spend_cap_exceeded", "coordinator",
+    passed
       ? `Spend cap check passed: $${estimatedTotal.toFixed(2)} within $${effectiveCap.toFixed(2)} limit`
       : `Spend cap exceeded: $${estimatedTotal.toFixed(2)} > $${effectiveCap.toFixed(2)}`,
-    { metadata: { estimatedTotal, effectiveCap, passed: capPassed } }
+    { metadata: { estimatedTotal, effectiveCap, passed } }
   ).catch((e) => console.warn("[Trace] spend_cap_check failed:", e));
 
-  if (!capPassed) {
-    console.warn(`[Coordinator] Spend cap exceeded: $${estimatedTotal} > $${effectiveCap}`);
+  if (!passed) {
     await pushEvent(taskId, "system", `Spend cap exceeded! Estimated $${estimatedTotal.toFixed(2)} exceeds cap of $${effectiveCap.toFixed(2)}. Task blocked.`, "error");
     await failExecution(taskId, `Spend cap exceeded: $${estimatedTotal.toFixed(2)} > $${effectiveCap.toFixed(2)}`);
 
-    // ── TRACE: task_failed (spend cap) ──────────────────────────────────────
     await recordTraceEvent(taskId, "task_failed", "coordinator",
       `Task failed: spend cap exceeded`,
       { metadata: { reason: "spend_cap_exceeded", estimatedTotal, effectiveCap } }
     ).catch((e) => console.warn("[Trace] task_failed failed:", e));
-    return;
+  } else {
+    await pushEvent(taskId, "system", `Spend cap check passed: $${estimatedTotal.toFixed(2)} within $${effectiveCap.toFixed(2)} limit.`, "success");
   }
 
-  await pushEvent(taskId, "system", `Spend cap check passed: $${estimatedTotal.toFixed(2)} within $${effectiveCap.toFixed(2)} limit.`, "success");
+  return { passed, estimatedTotal, effectiveCap };
+}
 
-  console.log(`[Coordinator] AI routed to ${subtasks.length} subtask(s)`);
+// ─────────────────────────────────────────────────────────────────────────────
+// STAGE 4: EXECUTE
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // Phase 2: Execute each subtask with real AI
+async function stageExecute(
+  taskId: string,
+  description: string,
+  initialSubtasks: Subtask[],
+  effectiveCap: number
+): Promise<ExecuteResult> {
   await transitionExecution(taskId, "processing");
 
-  const deliverables = [];
+  const subtasks = [...initialSubtasks];
+  const deliverables: Array<{ title: string; content: string; specialistName: string }> = [];
   const payments: Payment[] = [];
   let totalSpent = 0;
 
@@ -140,12 +182,10 @@ export async function executeCoordinator(
 
     await pushEvent(taskId, "specialist", `${subtask.specialistName} is processing...`, "pending");
 
-    // Update subtask status
     subtasks[i] = { ...subtask, status: "processing" };
     await updateExecution(taskId, { subtasks: [...subtasks] });
 
     try {
-      // Check running total against spend cap BEFORE paying
       if (totalSpent + (subtask.cost || 0) > effectiveCap) {
         await pushEvent(taskId, "system", `Payment blocked: cumulative spend $${(totalSpent + (subtask.cost || 0)).toFixed(2)} would exceed cap $${effectiveCap.toFixed(2)}.`, "error");
         subtasks[i] = { ...subtask, status: "failed" };
@@ -153,11 +193,9 @@ export async function executeCoordinator(
         continue;
       }
 
-      // Pay the specialist on-chain via x402 BEFORE executing
       await pushEvent(taskId, "specialist", `Initiating x402 payment to ${subtask.specialistName}...`, "pending");
       console.log(`[Coordinator] Paying ${subtask.specialistName} $${subtask.cost} USDC...`);
 
-      // ── TRACE: payment_initiated ─────────────────────────────────────────
       await recordTraceEvent(taskId, "payment_initiated", "payment",
         `Initiating x402 payment to ${subtask.specialistName} ($${subtask.cost?.toFixed(2)} USDC)`,
         { metadata: { specialistName: subtask.specialistName, amount: subtask.cost, agentVersionId: subtask.agentVersionId } }
@@ -167,11 +205,9 @@ export async function executeCoordinator(
       payments.push(payment);
 
       if (payment.status !== "confirmed") {
-        // Payment failed — do NOT execute the specialist
         console.warn(`[Coordinator] Payment failed for ${subtask.specialistName} — skipping execution`);
         await pushEvent(taskId, "payment", `Payment to ${subtask.specialistName} failed on-chain. Agent will not execute.`, "error");
 
-        // ── TRACE: payment_failed ──────────────────────────────────────────
         await recordTraceEvent(taskId, "payment_failed", "payment",
           `Payment to ${subtask.specialistName} failed on-chain`,
           { metadata: { specialistName: subtask.specialistName, amount: subtask.cost } }
@@ -182,7 +218,6 @@ export async function executeCoordinator(
         continue;
       }
 
-      // Payment confirmed — proceed with execution
       totalSpent += subtask.cost || 0;
       console.log(`[Coordinator] Payment confirmed: ${payment.txHash}`);
       await pushEvent(
@@ -192,7 +227,6 @@ export async function executeCoordinator(
         "success"
       );
 
-      // ── TRACE: payment_confirmed ─────────────────────────────────────────
       await recordTraceEvent(taskId, "payment_confirmed", "payment",
         `Payment confirmed: $${subtask.cost?.toFixed(2)} USDC to ${subtask.specialistName} (tx: ${payment.txHash?.slice(0, 10)}...)`,
         {
@@ -203,7 +237,6 @@ export async function executeCoordinator(
 
       await pushEvent(taskId, "specialist", `${subtask.specialistName} is processing...`, "pending");
 
-      // ── TRACE: specialist_invoked ────────────────────────────────────────
       await recordTraceEvent(taskId, "specialist_invoked", subtask.specialistName ?? "unknown",
         `${subtask.specialistName} invoked`,
         {
@@ -212,12 +245,10 @@ export async function executeCoordinator(
         }
       ).catch((e) => console.warn("[Trace] specialist_invoked failed:", e));
 
-      // Execute specialist with real AI (only after payment confirmed)
       const result = await executeSpecialist(subtask, description);
 
       await pushEvent(taskId, "specialist", `${subtask.specialistName} delivered results.`, "info");
 
-      // ── TRACE: specialist_completed ──────────────────────────────────────
       await recordTraceEvent(taskId, "specialist_completed", subtask.specialistName ?? "unknown",
         `${subtask.specialistName} completed successfully`,
         {
@@ -226,12 +257,7 @@ export async function executeCoordinator(
         }
       ).catch((e) => console.warn("[Trace] specialist_completed failed:", e));
 
-      // Update subtask as completed
-      subtasks[i] = {
-        ...subtask,
-        status: "completed",
-        result,
-      };
+      subtasks[i] = { ...subtask, status: "completed", result };
       await updateExecution(taskId, { subtasks: [...subtasks] });
 
       deliverables.push({
@@ -240,7 +266,6 @@ export async function executeCoordinator(
         specialistName: subtask.specialistName!,
       });
 
-      // Receipt-backed reputation: confirmed payment + successful execution = verified completion
       if (subtask.specialistId || subtask.specialistName) {
         const specialist = subtask.specialistId
           ? { id: subtask.specialistId }
@@ -261,7 +286,6 @@ export async function executeCoordinator(
       subtasks[i] = { ...subtask, status: "failed" };
       await updateExecution(taskId, { subtasks: [...subtasks] });
 
-      // Record failure in reputation
       if (subtask.specialistId || subtask.specialistName) {
         const specialist = subtask.specialistId
           ? { id: subtask.specialistId }
@@ -274,7 +298,6 @@ export async function executeCoordinator(
         }
       }
 
-      // ── TRACE: specialist_failed ─────────────────────────────────────────
       await recordTraceEvent(taskId, "specialist_failed", subtask.specialistName ?? "unknown",
         `${subtask.specialistName} failed: ${error instanceof Error ? error.message : "Unknown error"}`,
         { metadata: { specialistName: subtask.specialistName, error: error instanceof Error ? error.message : "Unknown error" } }
@@ -282,10 +305,22 @@ export async function executeCoordinator(
     }
   }
 
-  // Phase 3: Complete task with real payment data and audit trail
+  return { deliverables, payments, totalSpent, subtasks };
+}
 
-  // Build a lookup so payment breakdown rows include the version that was active
-  // at invocation time — this makes receipts fully self-describing.
+// ─────────────────────────────────────────────────────────────────────────────
+// STAGE 5: SYNTHESIZE + RECEIPT
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function stageSynthesize(
+  taskId: string,
+  description: string,
+  executeResult: ExecuteResult,
+  spendCap: number | undefined,
+  initialSubtasks: Subtask[]
+): Promise<void> {
+  const { deliverables, payments, totalSpent, subtasks } = executeResult;
+
   const versionBySpecialist = new Map<string, { agentVersion: number; versionHash: string }>();
   for (const s of subtasks) {
     if (s.specialistName && s.agentVersion !== undefined && s.versionHash) {
@@ -331,7 +366,6 @@ export async function executeCoordinator(
     totalSpent
   );
 
-  // ── TRACE: task_completed ────────────────────────────────────────────────
   await recordTraceEvent(taskId, "task_completed", "coordinator",
     `Task completed: ${deliverables.length} deliverable(s), $${totalSpent.toFixed(2)} USDC spent`,
     {
@@ -341,7 +375,6 @@ export async function executeCoordinator(
     }
   ).catch((e) => console.warn("[Trace] task_completed failed:", e));
 
-  // ── RECEIPT: generate proof-ready receipt ────────────────────────────────
   const agentVersionIds = subtasks
     .map((s) => s.agentVersionId)
     .filter((id): id is string => Boolean(id));
@@ -355,18 +388,42 @@ export async function executeCoordinator(
     resultSummary,
     paymentBreakdown,
   }).catch((e) => console.warn("[Receipt] generateReceipt failed:", e));
+}
 
-  console.log(`[Coordinator] Task ${taskId} completed. Total spent: $${totalSpent.toFixed(2)} USDC`);
+// ─────────────────────────────────────────────────────────────────────────────
+// PIPELINE ENTRY POINT
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function executeCoordinator(
+  taskId: string,
+  description: string,
+  spendCap?: number
+): Promise<void> {
+  console.log(`[Coordinator] Starting task ${taskId}: ${description}`);
+
+  const { effectiveCap } = await stageInitialize(taskId, description, spendCap);
+
+  const { subtasks } = await stageRoute(taskId, description);
+
+  const capResult = await stageSpendCap(taskId, subtasks, effectiveCap);
+  if (!capResult.passed) {
+    console.warn(`[Coordinator] Spend cap exceeded: $${capResult.estimatedTotal} > $${capResult.effectiveCap}`);
+    return;
+  }
+
+  console.log(`[Coordinator] AI routed to ${subtasks.length} subtask(s)`);
+
+  const executeResult = await stageExecute(taskId, description, subtasks, effectiveCap);
+
+  await stageSynthesize(taskId, description, executeResult, spendCap, subtasks);
+
+  console.log(`[Coordinator] Task ${taskId} completed. Total spent: $${executeResult.totalSpent.toFixed(2)} USDC`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AI-POWERED TASK DECOMPOSITION
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Uses an LLM to analyze the user's prompt and decide which specialists to use.
- * Falls back to keyword matching if the LLM call fails.
- */
 async function decomposeTaskWithAI(description: string): Promise<Subtask[]> {
   const specialists = await getSpecialistSummariesForRouting();
 
@@ -408,7 +465,6 @@ Return ONLY the JSON array:`;
     const content = completion.choices[0]?.message?.content?.trim();
     if (!content) throw new Error("Empty AI response");
 
-    // Parse the JSON response — handle markdown code block wrapping
     let jsonStr = content;
     const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (jsonMatch) {
@@ -423,7 +479,6 @@ Return ONLY the JSON array:`;
 
     console.log(`[Coordinator] AI selected: ${selections.map((s) => s.specialistName).join(", ")}`);
 
-    // Map selections to subtasks (only include specialists that actually exist)
     const subtasks: Subtask[] = [];
     for (const sel of selections) {
       const specialist = await getSpecialistByName(sel.specialistName);
@@ -449,7 +504,6 @@ Return ONLY the JSON array:`;
 
     if (subtasks.length > 0) return subtasks;
 
-    // If none of the AI selections matched, fall back
     throw new Error("No valid specialists matched AI selections");
   } catch (error) {
     console.warn("[Coordinator] AI routing failed, falling back to keyword matching:", error);
@@ -457,15 +511,11 @@ Return ONLY the JSON array:`;
   }
 }
 
-/**
- * Fallback: keyword-based decomposition (original logic)
- */
 async function decomposeTaskFallback(description: string): Promise<Subtask[]> {
   const lower = description.toLowerCase();
   const subtasks: Subtask[] = [];
   const allSpecialists = await getAllSpecialists();
 
-  // Check each specialist's capabilities against keywords in the description
   for (const specialist of allSpecialists) {
     const keywords = [
       specialist.name.toLowerCase(),
@@ -489,7 +539,6 @@ async function decomposeTaskFallback(description: string): Promise<Subtask[]> {
     }
   }
 
-  // If nothing matched, use the first available specialist as a catch-all
   if (subtasks.length === 0 && allSpecialists.length > 0) {
     const fallback = allSpecialists[0];
     const activeVersion = await getActiveAgentVersion(fallback.id);
@@ -512,18 +561,12 @@ async function decomposeTaskFallback(description: string): Promise<Subtask[]> {
 // DYNAMIC SPECIALIST EXECUTION
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Execute a specialist using the appropriate AI model.
- * Dynamically builds the prompt from the specialist's description.
- * Uses the specialist's aiModel preference (claude or openai).
- */
 async function executeSpecialist(
   subtask: Subtask,
   originalTask: string
 ): Promise<string> {
   const specialist = await getSpecialistByName(subtask.specialistName!);
 
-  // Build a dynamic prompt based on the specialist's description and capabilities
   const prompt = `You are ${subtask.specialistName}, a specialist AI agent.
 
 Your expertise: ${specialist?.description || "General analysis and problem solving"}
@@ -543,7 +586,6 @@ Format your response in markdown. Be thorough but concise.`;
 
   const preferClaude = specialist?.aiModel === "claude";
 
-  // Decrypt per-agent API key if available
   let agentApiKey: string | undefined;
   if (specialist?.apiKey) {
     try {
@@ -554,7 +596,6 @@ Format your response in markdown. Be thorough but concise.`;
     }
   }
 
-  // Try preferred model first
   if (preferClaude) {
     try {
       console.log(`[${subtask.specialistName}] Using Claude (preferred)...`);
@@ -579,7 +620,6 @@ Format your response in markdown. Be thorough but concise.`;
     }
   }
 
-  // OpenAI (primary or fallback)
   try {
     const modelInfo = preferClaude ? "(OpenAI fallback)" : "(primary)";
     console.log(`[${subtask.specialistName}] Using OpenAI ${modelInfo}...`);
