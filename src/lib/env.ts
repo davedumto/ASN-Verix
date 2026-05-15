@@ -141,6 +141,28 @@ function buildEnv() {
 
     /** API key for Trustless Work (required when ESCROW_MODE=live). */
     TRUSTLESS_WORK_API_KEY: process.env.TRUSTLESS_WORK_API_KEY,
+
+    // ── Proof / Boundless ─────────────────────────────────────────────────────
+
+    /**
+     * Controls which proof backend is used:
+     *   "disabled" — no proof generation; receipt stays at "proof_ready" status
+     *   "local"    — runs the TypeScript deterministic verifier in-process (no external calls)
+     *   "boundless" — submits to Boundless/RISC Zero proving network via BOUNDLESS_API_URL
+     */
+    PROOF_MODE: (process.env.PROOF_MODE ?? "local") as "disabled" | "local" | "boundless",
+
+    /** Base URL for the Boundless proving API (required when PROOF_MODE=boundless). */
+    BOUNDLESS_API_URL: process.env.BOUNDLESS_API_URL,
+
+    /** API key for Boundless (required when PROOF_MODE=boundless). */
+    BOUNDLESS_API_KEY: process.env.BOUNDLESS_API_KEY,
+
+    /**
+     * Optional: identifier for the RISC Zero proof program image committed in
+     * the Boundless registry. Pins the prover to a specific guest binary.
+     */
+    BOUNDLESS_IMAGE_ID: process.env.BOUNDLESS_IMAGE_ID,
   } as const;
 }
 
