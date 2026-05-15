@@ -285,6 +285,7 @@ export default function Dashboard() {
           // Add result as a proper chat response
           addMessage("result", "Task completed successfully", "success", {
             result: task.result,
+            taskId: taskId ?? undefined,
           });
           fetchWalletBalance();
           clearInterval(interval);
@@ -460,6 +461,7 @@ export default function Dashboard() {
           status: "success",
           timestamp: task.completedAt || task.createdAt,
           result: task.result,
+          taskId: historicTaskId,
         });
       }
 
