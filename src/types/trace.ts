@@ -44,6 +44,7 @@ export interface PaymentSummaryItem {
   specialist: string;
   amount: number;
   txHash?: string;
+  recipientAddress?: string;
   agentVersion?: number;
   versionHash?: string;
 }
@@ -57,6 +58,10 @@ export interface ExecutionReceipt {
   totalCost?: number;
   traceRoot: string;
   outputHash?: string;
+  registrySnapshotHash?: string;
+  anchorContractId?: string;
+  anchorTxHash?: string;
+  anchoredAt?: string;
   paymentSummary: PaymentSummaryItem[];
   receiptHash: string;
   status: "pending" | "proof_ready" | "verified";

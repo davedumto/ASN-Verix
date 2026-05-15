@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
-import { sha256, hashCanonical } from "@/lib/hash";
+import { sha256 } from "@/lib/hash";
+import { hashReceiptCommitment } from "@/lib/receipt-canonical";
 import { computeTraceRoot } from "@/services/trace";
 import { ExecutionReceipt, PaymentSummaryItem } from "@/types/trace";
 import { enqueueJob, startJob, completeJob, failJob } from "@/services/jobs";
@@ -36,6 +37,10 @@ function toReceipt(row: {
   totalCost: unknown;
   traceRoot: string;
   outputHash: string | null;
+  registrySnapshotHash: string | null;
+  anchorContractId: string | null;
+  anchorTxHash: string | null;
+  anchoredAt: Date | null;
   paymentSummary: unknown;
   receiptHash: string;
   status: string;
@@ -50,6 +55,10 @@ function toReceipt(row: {
     totalCost: row.totalCost != null ? Number(row.totalCost) : undefined,
     traceRoot: row.traceRoot,
     outputHash: row.outputHash ?? undefined,
+    registrySnapshotHash: row.registrySnapshotHash ?? undefined,
+    anchorContractId: row.anchorContractId ?? undefined,
+    anchorTxHash: row.anchorTxHash ?? undefined,
+    anchoredAt: row.anchoredAt?.toISOString(),
     paymentSummary: (row.paymentSummary as PaymentSummaryItem[]) ?? [],
     receiptHash: row.receiptHash,
     status: row.status as ExecutionReceipt["status"],
@@ -87,6 +96,7 @@ export interface ReceiptInput {
     specialist: string;
     amount: number;
     txHash?: string;
+    to?: string;
     agentVersion?: number;
     versionHash?: string;
   }>;
@@ -136,23 +146,23 @@ export async function generateReceipt(input: ReceiptInput): Promise<ExecutionRec
     specialist: p.specialist,
     amount: p.amount,
     txHash: p.txHash,
+    recipientAddress: p.to,
     agentVersion: p.agentVersion,
     versionHash: p.versionHash,
   }));
 
   // Canonical receipt content — deterministic JSON so receiptHash is stable
-  const receiptContent: Record<string, unknown> = {
+  const receiptHash = hashReceiptCommitment({
     taskId,
     taskInputHash,
-    agentVersionHashes: [...agentVersionHashes].sort(),
-    spendCap: spendCap ?? null,
-    totalCost: totalCost ?? null,
+    agentVersionHashes,
+    spendCap,
+    totalCost,
     traceRoot,
-    outputHash: outputHash ?? null,
-    registrySnapshotHash: registrySnapshotHash ?? null,
+    outputHash,
+    registrySnapshotHash,
     paymentSummary,
-  };
-  const receiptHash = hashCanonical(receiptContent);
+  });
 
   const row = await prisma.executionReceipt.upsert({
     where: { taskId },
@@ -164,6 +174,7 @@ export async function generateReceipt(input: ReceiptInput): Promise<ExecutionRec
       totalCost: totalCost ?? null,
       traceRoot,
       outputHash: outputHash ?? null,
+      registrySnapshotHash: registrySnapshotHash ?? null,
       paymentSummary: paymentSummary as unknown as object,
       receiptHash,
       status: "proof_ready",
@@ -175,6 +186,7 @@ export async function generateReceipt(input: ReceiptInput): Promise<ExecutionRec
       totalCost: totalCost ?? null,
       traceRoot,
       outputHash: outputHash ?? null,
+      registrySnapshotHash: registrySnapshotHash ?? null,
       paymentSummary: paymentSummary as unknown as object,
       receiptHash,
       status: "proof_ready",

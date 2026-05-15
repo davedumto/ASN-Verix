@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
+import { stellarAccountExplorerUrl } from "@/lib/stellar-config";
 
 interface NavbarProps {
   walletBalance: number;
@@ -113,7 +114,7 @@ export default function Navbar({
                     <span className={`w-1.5 h-1.5 rounded-full ${statusColor}`} />
                     <span className="text-xs text-ink-secondary">
                       {networkStatus === "connected"
-                        ? "SKALE Calypso"
+                        ? "Stellar Testnet"
                         : networkStatus === "loading"
                         ? "Connecting..."
                         : "Disconnected"}
@@ -124,13 +125,13 @@ export default function Navbar({
                 {/* Gas */}
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-ink-muted">Gas Fees</span>
-                  <span className="text-xs font-medium text-green-600">$0.00 (gasless)</span>
+                  <span className="text-xs font-medium text-green-600">Low-fee Soroban</span>
                 </div>
 
                 {/* Protocol */}
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-ink-muted">Protocol</span>
-                  <span className="text-xs text-ink-secondary">x402</span>
+                  <span className="text-xs text-ink-secondary">Trustless Work</span>
                 </div>
               </div>
 
@@ -138,7 +139,7 @@ export default function Navbar({
               {walletAddress && walletAddress !== "Not configured" && (
                 <div className="border-t border-border px-5 py-3">
                   <a
-                    href={`https://staging-utter-unripe-menkar.explorer.staging-v3.skalenodes.com/address/${walletAddress}`}
+                    href={stellarAccountExplorerUrl(walletAddress)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center justify-center gap-1.5 text-xs text-accent hover:text-accent-hover transition-colors"

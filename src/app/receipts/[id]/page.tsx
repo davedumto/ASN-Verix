@@ -241,6 +241,7 @@ export default function ReceiptExplorerPage({
                 value: receipt.totalCost != null ? `$${Number(receipt.totalCost).toFixed(2)} USDC` : "—",
               },
               { label: "Agent Snapshots", value: `${receipt.agentVersionHashes.length} committed` },
+              { label: "Soroban Anchor", value: receipt.anchorContractId ? abbrev(receipt.anchorContractId, 6) : "—", full: receipt.anchorContractId },
               { label: "Created", value: new Date(receipt.createdAt).toLocaleString() },
             ].map((row) => (
               <div key={row.label} className="flex flex-col gap-0.5">

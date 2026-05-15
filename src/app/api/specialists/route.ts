@@ -8,6 +8,7 @@ import {
 import { getReputationStatsForAll } from "@/services/reputation";
 import { ProofPolicy } from "@/types/specialist";
 import { encrypt, maskApiKey } from "@/lib/encryption";
+import { isStellarPublicKey } from "@/lib/stellar-config";
 import {
   canMutate,
   forbiddenResponse,
@@ -17,6 +18,7 @@ import {
 } from "@/lib/auth";
 
 const VALID_PROOF_POLICIES: ProofPolicy[] = ["trace-only", "receipt-proof", "escrow-eligible"];
+const DEMO_STELLAR_WALLET = "G" + "D".repeat(55);
 
 function toProofPolicy(raw: string | undefined): ProofPolicy {
   if (raw && VALID_PROOF_POLICIES.includes(raw as ProofPolicy)) {
@@ -69,10 +71,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const walletAddr = walletAddress?.trim() || "0x0000000000000000000000000000000000000000";
-    if (walletAddress && !/^0x[0-9a-fA-F]{40}$/.test(walletAddr)) {
+    const walletAddr = walletAddress?.trim() || DEMO_STELLAR_WALLET;
+    if (walletAddress && !isStellarPublicKey(walletAddr)) {
       return NextResponse.json(
-        { error: "Invalid wallet address — must be a 0x-prefixed 20-byte hex address" },
+        { error: "Invalid wallet address - must be a Stellar public key starting with G" },
         { status: 400 }
       );
     }
@@ -156,9 +158,9 @@ export async function PUT(request: NextRequest) {
     }
 
     if (walletAddress !== undefined && walletAddress !== "") {
-      if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+      if (!isStellarPublicKey(walletAddress)) {
         return NextResponse.json(
-          { error: "Invalid wallet address — must be a 0x-prefixed 20-byte hex address" },
+          { error: "Invalid wallet address - must be a Stellar public key starting with G" },
           { status: 400 }
         );
       }
@@ -197,7 +199,7 @@ export async function PUT(request: NextRequest) {
     const fields: Parameters<typeof updateSpecialist>[1] = {};
     if (description !== undefined) fields.description = description;
     if (priceUsdc !== undefined) fields.priceUsdc = parseFloat(priceUsdc);
-    if (walletAddress !== undefined) fields.walletAddress = walletAddress || "0x0000000000000000000000000000000000000000";
+    if (walletAddress !== undefined) fields.walletAddress = walletAddress || DEMO_STELLAR_WALLET;
     if (proofPolicy !== undefined) fields.proofPolicy = proofPolicy as ProofPolicy;
     if (aiModel !== undefined) fields.aiModel = aiModel === "claude" ? "claude" : "openai";
     if (capabilities !== undefined) {

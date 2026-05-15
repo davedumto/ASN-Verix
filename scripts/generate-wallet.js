@@ -1,38 +1,19 @@
 #!/usr/bin/env node
 
-/**
- * Generate a new wallet for the coordinator
- * Run this once to create a wallet, then add the private key to .env.local
- */
+console.log(`
+Verix now uses Stellar/Soroban for hackathon settlement.
 
-const { ethers } = require("ethers");
+Create a Stellar testnet keypair with one of:
 
-function generateWallet() {
-    console.log("\n🔐 Generating new wallet for coordinator...\n");
+  stellar keys generate <identity> --network testnet
+  stellar keys address <identity>
 
-    const wallet = ethers.Wallet.createRandom();
+or use a wallet supported by Trustless Work.
 
-    console.log("✅ Wallet generated successfully!\n");
-    console.log("📋 Wallet Details:");
-    console.log("─".repeat(60));
-    console.log(`Address:     ${wallet.address}`);
-    console.log(`Private Key: ${wallet.privateKey}`);
-    console.log("─".repeat(60));
+Add the public key to .env.local:
 
-    console.log("\n⚠️  IMPORTANT SECURITY NOTES:");
-    console.log("  1. NEVER share or commit your private key");
-    console.log("  2. Add it to .env.local as COORDINATOR_PRIVATE_KEY");
-    console.log("  3. Keep a secure backup of this key");
-    console.log("  4. This is for TESTNET ONLY - use secure key management in production\n");
+  COORDINATOR_STELLAR_PUBLIC_KEY=G...
+  TRUSTLESS_WORK_SIGNER_ADDRESS=G...
 
-    console.log("📝 Next Steps:");
-    console.log("  1. Copy the private key above");
-    console.log("  2. Add to .env.local:");
-    console.log(`     COORDINATOR_PRIVATE_KEY=${wallet.privateKey}`);
-    console.log("  3. Fund the wallet:");
-    console.log(`     - Visit: https://staging-faucet.skale.network/`);
-    console.log(`     - Enter address: ${wallet.address}`);
-    console.log("     - Request test sFUEL and USDC tokens\n");
-}
-
-generateWallet();
+Then fund it on Stellar testnet and configure Trustless Work credentials.
+`);

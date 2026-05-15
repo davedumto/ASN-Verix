@@ -6,6 +6,7 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { SpecialistProfile, ProofPolicy, AgentVersion } from "@/types/specialist";
 import { getSpecialistProfile } from "@/lib/api-client";
+import { stellarAccountExplorerUrl } from "@/lib/stellar-config";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -44,8 +45,6 @@ const PROOF_POLICY_CONFIG: Record<
     ),
   },
 };
-
-const SKALE_EXPLORER = "https://staging-utter-unripe-menkar.explorer.staging-v3.skalenodes.com";
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -361,11 +360,11 @@ export default function AgentProfilePage({
                   <div className="text-xs text-white/30 mb-1">Endpoint</div>
                   <div className="font-mono text-white/40 text-xs truncate">{profile.endpoint}</div>
                 </div>
-                {profile.walletAddress && profile.walletAddress !== "0x0000000000000000000000000000000000000000" && (
+                {profile.walletAddress && profile.walletAddress.startsWith("G") && (
                   <div>
                     <div className="text-xs text-white/30 mb-1">Payment Wallet</div>
                     <a
-                      href={`${SKALE_EXPLORER}/address/${profile.walletAddress}`}
+                      href={stellarAccountExplorerUrl(profile.walletAddress)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="font-mono text-xs text-white/50 hover:text-white/80 transition-colors flex items-center gap-1.5 group"

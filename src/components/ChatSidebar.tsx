@@ -6,6 +6,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Task } from "@/types/task";
 import { Specialist } from "@/types/specialist";
+import { stellarAccountExplorerUrl } from "@/lib/stellar-config";
 
 interface ChatSidebarProps {
     taskHistory: Task[];
@@ -24,9 +25,6 @@ interface ChatSidebarProps {
     /** Current browser session ID — used to gate the delete button per task ownership. */
     sessionId?: string | null;
 }
-
-const EXPLORER_URL =
-    "https://staging-utter-unripe-menkar.explorer.staging-v3.skalenodes.com";
 
 export default function ChatSidebar({
     taskHistory,
@@ -266,24 +264,24 @@ export default function ChatSidebar({
                                             <div className="flex items-center gap-1.5">
                                                 <span className={`w-1.5 h-1.5 rounded-full ${statusColor}`} />
                                                 <span className="text-[10px] text-white/50">
-                                                    {networkStatus === "connected" ? "SKALE Calypso" : networkStatus === "loading" ? "Connecting..." : "Disconnected"}
+                                                    {networkStatus === "connected" ? "Stellar Testnet" : networkStatus === "loading" ? "Connecting..." : "Disconnected"}
                                                 </span>
                                             </div>
                                         </div>
                                         <div className="flex items-center justify-between">
                                             <span className="text-[10px] text-white/30">Gas Fees</span>
-                                            <span className="text-[10px] font-medium text-emerald-400">$0.00 (gasless)</span>
+                                            <span className="text-[10px] font-medium text-emerald-400">Low-fee Soroban</span>
                                         </div>
                                         <div className="flex items-center justify-between">
                                             <span className="text-[10px] text-white/30">Protocol</span>
-                                            <span className="text-[10px] text-white/50">x402</span>
+                                            <span className="text-[10px] text-white/50">Trustless Work</span>
                                         </div>
                                     </div>
                                     {/* Explorer link */}
                                     {walletAddress && walletAddress !== "Not configured" && (
                                         <div className="border-t border-white/8 px-4 py-2">
                                             <a
-                                                href={`${EXPLORER_URL}/address/${walletAddress}`}
+                                                href={stellarAccountExplorerUrl(walletAddress)}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="flex items-center justify-center gap-1.5 text-[10px] text-white/40 hover:text-white/70 transition-colors"
@@ -376,7 +374,7 @@ export default function ChatSidebar({
                         <div className="flex items-center gap-2">
                             <span className={`w-2 h-2 rounded-full ${statusColor}`} />
                             <span className="text-xs text-white/50">
-                                {networkStatus === "connected" ? "SKALE Calypso" : networkStatus === "loading" ? "Connecting..." : "Disconnected"}
+                                {networkStatus === "connected" ? "Stellar Testnet" : networkStatus === "loading" ? "Connecting..." : "Disconnected"}
                             </span>
                         </div>
                         <span className="text-xs font-mono font-semibold text-white/80">${walletBalance.toFixed(2)}</span>

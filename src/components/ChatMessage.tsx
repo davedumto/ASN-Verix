@@ -9,9 +9,7 @@ import { ExecutionReceipt } from "@/types/trace";
 import { ProofRecord } from "@/types/proof";
 import { getProofByTask, verifyProof } from "@/lib/api-client";
 import EscrowTimeline from "@/components/EscrowTimeline";
-
-const EXPLORER_URL =
-    "https://staging-utter-unripe-menkar.explorer.staging-v3.skalenodes.com";
+import { stellarTxExplorerUrl } from "@/lib/stellar-config";
 
 export type ChatMessageRole =
     | "user"
@@ -454,7 +452,7 @@ function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: 
                                         {p.txHash && (
                                             <div className="flex items-center justify-between">
                                                 <span className="text-ink-muted">Tx</span>
-                                                <a href={`${EXPLORER_URL}/tx/${p.txHash}`} target="_blank" rel="noopener noreferrer" className="text-ink-secondary hover:text-ink underline">
+                                                <a href={stellarTxExplorerUrl(p.txHash)} target="_blank" rel="noopener noreferrer" className="text-ink-secondary hover:text-ink underline">
                                                     {p.txHash.slice(0, 10)}...{p.txHash.slice(-8)}
                                                 </a>
                                             </div>
@@ -470,7 +468,7 @@ function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: 
                                         )}
                                         <div className="flex items-center justify-between">
                                             <span className="text-ink-muted">Gas</span>
-                                            <span className="text-success">$0.00 (gasless)</span>
+                                            <span className="text-success">Stellar low-fee settlement</span>
                                         </div>
                                     </div>
                                 </motion.div>
