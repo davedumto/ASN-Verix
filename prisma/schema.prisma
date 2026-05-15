@@ -81,7 +81,7 @@ model Payment {
   fromAddress  String?
   toAddress    String?
   status       String   @default("pending")
-  protocol     String   @default("x402")
+  protocol     String   @default("trustless_work")
   createdAt    DateTime @default(now())
   confirmedAt  DateTime?
 
@@ -204,6 +204,10 @@ model ExecutionReceipt {
   totalCost          Decimal?
   traceRoot          String
   outputHash         String?
+  registrySnapshotHash String?
+  anchorContractId   String?
+  anchorTxHash       String?
+  anchoredAt         DateTime?
   paymentSummary     Json
   receiptHash        String
   /// ReceiptStatus: "pending" | "proof_ready" | "verified"

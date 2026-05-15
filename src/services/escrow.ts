@@ -18,6 +18,7 @@
 
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/db";
+import { STELLAR_USDC } from "@/lib/stellar-config";
 import { ExecutionReceipt } from "@/types/trace";
 import { recordTraceEvent } from "@/services/trace";
 import {
@@ -114,8 +115,8 @@ class TrustlessWorkAdapter implements EscrowProvider {
     try {
       const result = await this.request<{ txHash?: string; hash?: string }>(
         "POST",
-        "/helpers/send-transaction",
-        { unsignedTransaction }
+        "/helper/send-transaction",
+        { signedXdr: unsignedTransaction, unsignedTransaction }
       );
       return result.txHash ?? result.hash;
     } catch (err) {
@@ -125,20 +126,41 @@ class TrustlessWorkAdapter implements EscrowProvider {
   }
 
   async createEscrow(input: CreateEscrowInput): Promise<CreateEscrowResult> {
-    // TODO: align with actual TW deploy endpoint once escrow contract structure is finalized
-    // Endpoint: POST /deployer/single-release
+    const type = env.TRUSTLESS_WORK_ESCROW_TYPE;
+    const milestones = input.milestones?.length
+      ? input.milestones
+      : [{
+          description: `Agent execution for task ${input.taskId}`,
+          amount: input.totalAmount,
+          receiver: input.payerAddress,
+        }];
+
     const data = await this.request<{ unsignedTransaction?: string; id?: string; status?: string }>(
       "POST",
-      "/deployer/single-release",
+      `/deployer/${type}`,
       {
         signer: this.signerAddress,
         engagementId: input.taskId,
         title: `Task ${input.taskId.slice(0, 8)}`,
-        description: `Agent Specialization Network task escrow`,
+        description: `Verix proof-gated multi-agent execution escrow`,
+        roles: {
+          approver: input.payerAddress,
+          serviceProvider: milestones[0]?.receiver ?? input.payerAddress,
+          platformAddress: input.payerAddress,
+          releaseSigner: this.signerAddress,
+          disputeResolver: input.payerAddress,
+        },
         amount: input.totalAmount,
         platformFee: 0,
-        trustline: [],
-        milestones: [],
+        trustline: {
+          symbol: input.currency ?? STELLAR_USDC.code,
+          address: STELLAR_USDC.issuer,
+        },
+        milestones: milestones.map((m) => ({
+          description: m.description,
+          amount: String(m.amount),
+          receiver: m.receiver,
+        })),
       }
     );
 
@@ -157,8 +179,8 @@ class TrustlessWorkAdapter implements EscrowProvider {
   async fundEscrow(input: FundEscrowInput): Promise<FundEscrowResult> {
     const data = await this.request<{ unsignedTransaction?: string; status?: string }>(
       "POST",
-      `/escrow/single-release/fund-escrow`,
-      { contractId: input.externalId, amount: input.amount, signer: this.signerAddress }
+      `/escrow/${env.TRUSTLESS_WORK_ESCROW_TYPE}/fund-escrow`,
+      { contractId: input.externalId, amount: String(input.amount), signer: this.signerAddress }
     );
 
     let txHash: string | undefined;
@@ -177,14 +199,19 @@ class TrustlessWorkAdapter implements EscrowProvider {
   }
 
   async releaseMilestone(input: ReleaseMilestoneInput): Promise<ReleaseMilestoneResult> {
-    const contractId = input.externalMilestoneId ?? input.milestoneId;
+    const type = env.TRUSTLESS_WORK_ESCROW_TYPE;
+    const contractId = input.escrowId;
     const releaseSigner = input.releaseSigner ?? this.signerAddress;
+    const milestoneIndex = input.externalMilestoneId ?? input.milestoneId;
 
-    // Step 1: get unsigned XDR transaction from TW
     const data = await this.request<{ unsignedTransaction: string }>(
       "POST",
-      "/escrow/single-release/release-funds",
-      { contractId, releaseSigner }
+      type === "multi-release"
+        ? "/escrow/multi-release/release-milestone-funds"
+        : "/escrow/single-release/release-funds",
+      type === "multi-release"
+        ? { contractId, releaseSigner, milestoneIndex: String(milestoneIndex) }
+        : { contractId, releaseSigner }
     );
 
     // Step 2: submit XDR to the network via TW helper
@@ -318,7 +345,7 @@ export async function releaseEscrowMilestones(
 
     try {
       const result = await provider.releaseMilestone({
-        escrowId: escrow.id,
+        escrowId: escrow.externalId ?? escrow.id,
         milestoneId: milestone.id,
         externalMilestoneId: milestone.externalMilestoneId ?? undefined,
         receiptHash: receipt.receiptHash,

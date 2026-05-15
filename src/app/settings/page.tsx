@@ -115,7 +115,7 @@ export default function SettingsPage() {
     setDescription(s.description);
     setCapabilities(s.capabilities.join(", "));
     setPriceUsdc(s.priceUsdc.toFixed(2));
-    setWalletAddress(s.walletAddress === "0x0000000000000000000000000000000000000000" ? "" : s.walletAddress);
+    setWalletAddress(s.walletAddress?.startsWith("G") ? s.walletAddress : "");
     setAiModel(s.aiModel ?? "openai");
     setProofPolicy(s.proofPolicy ?? "trace-only");
     setApiKey("");
@@ -146,8 +146,8 @@ export default function SettingsPage() {
       return;
     }
     const trimmedWallet = walletAddress.trim();
-    if (trimmedWallet && !/^0x[0-9a-fA-F]{40}$/.test(trimmedWallet)) {
-      setMessage({ text: "Wallet address must be a 0x-prefixed 20-byte hex address", type: "error" });
+    if (trimmedWallet && !/^G[A-Z2-7]{55}$/.test(trimmedWallet)) {
+      setMessage({ text: "Wallet address must be a Stellar public key starting with G", type: "error" });
       setSubmitting(false);
       return;
     }
@@ -561,7 +561,7 @@ export default function SettingsPage() {
                         type="text"
                         value={walletAddress}
                         onChange={(e) => setWalletAddress(e.target.value)}
-                        placeholder="0x..."
+                        placeholder="G..."
                         className={`${INPUT_CLASS} font-mono`}
                       />
                     </div>
@@ -653,8 +653,8 @@ export default function SettingsPage() {
               immutable version snapshot is recorded at invocation time so receipts can prove the exact metadata used.
             </p>
             <p>
-              <span className="text-white/60 font-medium">4.</span> Payments are made automatically on-chain via the
-              x402 protocol. Escrow-eligible agents hold payment until completion is verified.
+              <span className="text-white/60 font-medium">4.</span> Settlement is tracked on Stellar through Trustless Work escrow.
+              Escrow-eligible agents release payment only after completion is verified.
             </p>
           </div>
         </div>

@@ -25,8 +25,6 @@ import { sha256 } from "@/lib/hash";
 import { decrypt } from "@/lib/encryption";
 import { env } from "@/lib/env";
 
-const EXPLORER_URL = "https://staging-utter-unripe-menkar.explorer.staging-v3.skalenodes.com";
-
 const anthropic = new Anthropic({
   apiKey: env.CLAUDE_API_KEY,
 });
@@ -222,11 +220,11 @@ async function stageExecute(
       continue;
     }
 
-    await pushEvent(taskId, "specialist", `Initiating x402 payment to ${subtask.specialistName}...`, "pending");
-    console.log(`[Coordinator] Paying ${subtask.specialistName} $${subtask.cost} USDC...`);
+    await pushEvent(taskId, "specialist", `Recording Trustless Work payout intent for ${subtask.specialistName}...`, "pending");
+    console.log(`[Coordinator] Recording payout intent for ${subtask.specialistName} $${subtask.cost} USDC...`);
 
     await recordTraceEvent(taskId, "payment_initiated", "payment",
-      `Initiating x402 payment to ${subtask.specialistName} ($${subtask.cost?.toFixed(2)} USDC)`,
+      `Recording Stellar escrow payout intent for ${subtask.specialistName} ($${subtask.cost?.toFixed(2)} USDC)`,
       { metadata: { specialistName: subtask.specialistName, amount: subtask.cost, agentVersionId: subtask.agentVersionId } }
     ).catch((e) => console.warn("[Trace] payment_initiated failed:", e));
 
@@ -428,7 +426,7 @@ async function stageSynthesize(
     "success"
   );
 
-  const resultSummary = `Successfully completed ${deliverables.length} subtask(s). ${confirmedCount} on-chain payment(s) confirmed on SKALE Calypso. Total: $${totalSpent.toFixed(2)} USDC (zero gas fees).`;
+  const resultSummary = `Successfully completed ${deliverables.length} subtask(s). ${confirmedCount} Stellar/Trustless Work payout intent(s) committed. Total: $${totalSpent.toFixed(2)} USDC.`;
 
   await completeExecution(
     taskId,
@@ -719,7 +717,7 @@ Format your response in markdown. Be thorough but concise.`;
     return { output: "Analysis completed successfully.", model: "gpt-4o", provider: "openai" };
   } catch (error) {
     console.warn(`[${subtask.specialistName}] OpenAI also failed, using fallback response:`, error);
-    const fallbackText = `# ${subtask.specialistName} Report\n\nAnalysis completed for: "${originalTask.substring(0, 100)}"\n\nBoth AI providers were unavailable. Please try again later.\n\n---\n*${subtask.specialistName} | $${subtask.cost?.toFixed(2)} USDC via x402*`;
+    const fallbackText = `# ${subtask.specialistName} Report\n\nAnalysis completed for: "${originalTask.substring(0, 100)}"\n\nBoth AI providers were unavailable. Please try again later.\n\n---\n*${subtask.specialistName} | $${subtask.cost?.toFixed(2)} USDC via Stellar escrow*`;
     return { output: fallbackText, model: "none", provider: "fallback" };
   }
 }

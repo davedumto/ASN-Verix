@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       txHash,
       verified,
-      network: "skale-testnet",
+      network: "stellar-testnet",
     });
   } catch (error) {
     console.error("Verification failed:", error);

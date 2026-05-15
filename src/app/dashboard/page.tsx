@@ -869,8 +869,7 @@ export default function Dashboard() {
               </button>
             </div>
             <p className="text-[10px] text-ink-muted text-center mt-2">
-              Agents pay via x402 on SKALE Calypso · Zero gas fees · Instant
-              finality
+              Settlement uses Stellar/Soroban via Trustless Work escrow · Proof-gated release
             </p>
           </div>
         </div>
@@ -915,7 +914,7 @@ export default function Dashboard() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-ink-muted">Network</span>
-                <span className="text-ink">SKALE Calypso (gasless)</span>
+                <span className="text-ink">Stellar Testnet / Soroban</span>
               </div>
             </div>
 

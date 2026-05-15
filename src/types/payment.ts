@@ -9,7 +9,7 @@ export interface Payment {
   from?: string;
   to?: string;
   status: "pending" | "confirmed" | "failed";
-  protocol: "x402" | "ap2";
+  protocol: "trustless_work" | "stellar" | "x402" | "ap2";
   createdAt: string;
   confirmedAt?: string;
 }

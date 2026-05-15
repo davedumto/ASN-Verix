@@ -20,29 +20,8 @@
  *   - Off-chain computation correctness beyond workflow metadata
  */
 
-import { createHash } from "crypto";
 import { ProofInput, ProofJournal } from "../src/types/proof";
-
-// ── Internal helpers ──────────────────────────────────────────────────────────
-
-function sha256(data: string): string {
-  return createHash("sha256").update(data, "utf8").digest("hex");
-}
-
-function canonicalize(value: unknown): string {
-  if (value === null || value === undefined) return JSON.stringify(value ?? null);
-  if (typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return "[" + (value as unknown[]).map(canonicalize).join(",") + "]";
-  const keys = Object.keys(value as Record<string, unknown>).sort();
-  const pairs = keys.map(
-    (k) => `${JSON.stringify(k)}:${canonicalize((value as Record<string, unknown>)[k])}`
-  );
-  return "{" + pairs.join(",") + "}";
-}
-
-function hashCanonical(obj: Record<string, unknown>): string {
-  return sha256(canonicalize(obj));
-}
+import { hashReceiptCommitment } from "../src/lib/receipt-canonical";
 
 // ── Verification constraints ──────────────────────────────────────────────────
 
@@ -54,15 +33,25 @@ function hashCanonical(obj: Record<string, unknown>): string {
  * produces a different hash and fails this check.
  */
 function checkReceiptIntegrity(input: ProofInput): boolean {
-  const recomputed = hashCanonical({
+  const paymentSummary = input.paymentIntents.map((p) => ({
+    specialist: p.specialist,
+    amount: p.amount,
+    txHash: p.txHash,
+    recipientAddress: p.recipientAddress,
+    agentVersion: p.agentVersion,
+    versionHash: p.versionHash ?? p.agentVersionHash,
+  }));
+
+  const recomputed = hashReceiptCommitment({
     taskId: input.taskId,
     taskInputHash: input.taskInputHash,
-    agentVersionHashes: [...input.agentVersionHashes].sort(),
-    spendCap: input.spendCap ?? null,
-    totalCost: input.totalCost ?? null,
+    agentVersionHashes: input.agentVersionHashes,
+    spendCap: input.spendCap,
+    totalCost: input.totalCost,
     traceRoot: input.traceRoot,
-    outputHash: input.outputHash ?? null,
-    paymentSummary: input.paymentIntents,
+    outputHash: input.outputHash,
+    registrySnapshotHash: input.registrySnapshotHash,
+    paymentSummary,
   });
   return recomputed === input.receiptHash;
 }
@@ -167,7 +156,16 @@ export function buildProofInput(opts: {
   spendCap: number;
   totalCost: number;
   outputHash?: string;
-  paymentIntents: Array<{ specialist: string; amount: number; agentVersionHash?: string; txHash?: string }>;
+  registrySnapshotHash?: string;
+  paymentIntents: Array<{
+    specialist: string;
+    amount: number;
+    recipientAddress?: string;
+    agentVersion?: number;
+    versionHash?: string;
+    agentVersionHash?: string;
+    txHash?: string;
+  }>;
 }): ProofInput {
   return {
     version: "1.0",
@@ -179,6 +177,7 @@ export function buildProofInput(opts: {
     spendCap: opts.spendCap,
     totalCost: opts.totalCost,
     outputHash: opts.outputHash,
+    registrySnapshotHash: opts.registrySnapshotHash,
     paymentIntents: opts.paymentIntents,
   };
 }
