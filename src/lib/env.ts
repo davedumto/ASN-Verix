@@ -125,6 +125,22 @@ function buildEnv() {
      * cleanup. If unset, only session-based ownership is enforced.
      */
     ADMIN_SECRET: process.env.ADMIN_SECRET,
+
+    // ── Escrow ───────────────────────────────────────────────────────────────
+
+    /**
+     * Controls which escrow path is active:
+     *   "disabled" — skips escrow entirely; coordinator uses direct USDC transfer (current default)
+     *   "demo"     — uses the in-process DemoEscrowAdapter with deterministic fake IDs
+     *   "live"     — calls the Trustless Work API at TRUSTLESS_WORK_API_URL
+     */
+    ESCROW_MODE: (process.env.ESCROW_MODE ?? "disabled") as "disabled" | "demo" | "live",
+
+    /** Base URL for the Trustless Work REST API (required when ESCROW_MODE=live). */
+    TRUSTLESS_WORK_API_URL: process.env.TRUSTLESS_WORK_API_URL,
+
+    /** API key for Trustless Work (required when ESCROW_MODE=live). */
+    TRUSTLESS_WORK_API_KEY: process.env.TRUSTLESS_WORK_API_KEY,
   } as const;
 }
 
