@@ -16,6 +16,7 @@ import {
   unauthorizedResponse,
 } from "@/lib/auth";
 import { isStellarPublicKey } from "@/lib/stellar-config";
+import { getSpecialistById } from "@/services/discovery";
 
 export async function GET() {
   const tasks = await listExecutions();
@@ -38,6 +39,28 @@ export async function POST(request: NextRequest) {
         { error: "A connected Stellar wallet is required to submit a task" },
         { status: 400 }
       );
+    }
+
+    if (body.requestedSpecialistId) {
+      const specialist = await getSpecialistById(body.requestedSpecialistId);
+      if (!specialist) {
+        return NextResponse.json(
+          { error: "Requested marketplace agent was not found" },
+          { status: 404 }
+        );
+      }
+      if (specialist.status !== "online") {
+        return NextResponse.json(
+          { error: `Requested marketplace agent is ${specialist.status}` },
+          { status: 409 }
+        );
+      }
+      if (!isStellarPublicKey(specialist.walletAddress)) {
+        return NextResponse.json(
+          { error: "Requested marketplace agent does not have a valid Stellar payout wallet" },
+          { status: 400 }
+        );
+      }
     }
 
     // Resolve or create a session for this caller

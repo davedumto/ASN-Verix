@@ -15,12 +15,14 @@ import { Payment } from "@/types/payment";
 import {
   getSpecialistSummariesForRouting,
   getSpecialistByName,
+  getSpecialistById,
   getAllSpecialists,
   getActiveAgentVersion,
 } from "@/services/discovery";
 import { appendReputationEvent } from "@/services/reputation";
 import { recordTraceEvent } from "@/services/trace";
 import { generateReceipt } from "@/services/receipt";
+import { buildPinnedSubtask } from "@/services/routing";
 import { sha256 } from "@/lib/hash";
 import { decrypt } from "@/lib/encryption";
 import { env } from "@/lib/env";
@@ -107,14 +109,61 @@ async function stageInitialize(
 // STAGE 2: ROUTE
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function stageRoute(taskId: string, description: string): Promise<RouteResult> {
+async function stageRoute(
+  taskId: string,
+  description: string,
+  requestedSpecialistId?: string
+): Promise<RouteResult> {
   // Snapshot the registry before routing so the receipt can commit to which agents were available
   const allSpecialists = await getSpecialistSummariesForRouting();
   const registrySnapshotHash = sha256(
     JSON.stringify([...allSpecialists].sort((a, b) => a.name.localeCompare(b.name)))
   );
 
-  const subtasks = await decomposeTaskWithAI(description);
+  let subtasks: Subtask[];
+  if (requestedSpecialistId) {
+    const specialist = await getSpecialistById(requestedSpecialistId);
+    if (!specialist || specialist.status !== "online") {
+      const reason = specialist ? `status=${specialist.status}` : "not found";
+      await pushEvent(taskId, "system", `Requested marketplace agent unavailable: ${requestedSpecialistId} (${reason}).`, "error");
+      await recordTraceEvent(
+        taskId,
+        "selected_agent_unavailable",
+        "coordinator",
+        `Requested marketplace agent unavailable: ${requestedSpecialistId} (${reason})`,
+        { metadata: { requestedSpecialistId, reason } }
+      ).catch((e) => console.warn("[Trace] selected_agent_unavailable failed:", e));
+      throw new Error(`Requested marketplace agent unavailable: ${requestedSpecialistId}`);
+    }
+
+    const activeVersion = await getActiveAgentVersion(specialist.id);
+    subtasks = [buildPinnedSubtask(specialist, activeVersion)];
+
+    await updateExecution(taskId, {
+      requestedSpecialistName: specialist.name,
+      requestedAgentVersionId: activeVersion?.id,
+      requestedAgentVersionHash: activeVersion?.versionHash,
+    });
+    await pushEvent(taskId, "coordinator", `Marketplace agent selected: ${specialist.name}.`, "success");
+    await recordTraceEvent(
+      taskId,
+      "selected_agent_pinned",
+      "coordinator",
+      `User selected marketplace agent ${specialist.name}`,
+      {
+        outputHash: activeVersion?.versionHash,
+        metadata: {
+          requestedSpecialistId: specialist.id,
+          specialistName: specialist.name,
+          agentVersionId: activeVersion?.id,
+          agentVersion: activeVersion?.version,
+          versionHash: activeVersion?.versionHash,
+        },
+      }
+    ).catch((e) => console.warn("[Trace] selected_agent_pinned failed:", e));
+  } else {
+    subtasks = await decomposeTaskWithAI(description);
+  }
 
   const selectedAgentVersions = subtasks.map((s) => ({
     specialistName: s.specialistName ?? "unknown",
@@ -124,7 +173,14 @@ async function stageRoute(taskId: string, description: string): Promise<RouteRes
 
   await transitionExecution(taskId, "discovering", { subtasks });
 
-  await pushEvent(taskId, "coordinator", `AI selected ${subtasks.length} specialist(s) for this task.`, "success");
+  await pushEvent(
+    taskId,
+    "coordinator",
+    requestedSpecialistId
+      ? `Pinned execution to ${subtasks[0]?.specialistName ?? "selected agent"}.`
+      : `AI selected ${subtasks.length} specialist(s) for this task.`,
+    "success"
+  );
 
   const subtaskNames = subtasks.map((s) => s.specialistName ?? "unknown");
   await recordTraceEvent(taskId, "task_decomposed", "coordinator",
@@ -474,13 +530,14 @@ async function stageSynthesize(
 export async function executeCoordinator(
   taskId: string,
   description: string,
-  spendCap?: number
+  spendCap?: number,
+  requestedSpecialistId?: string
 ): Promise<void> {
   console.log(`[Coordinator] Starting task ${taskId}: ${description}`);
 
   const { effectiveCap } = await stageInitialize(taskId, description, spendCap);
 
-  const { subtasks, registrySnapshotHash } = await stageRoute(taskId, description);
+  const { subtasks, registrySnapshotHash } = await stageRoute(taskId, description, requestedSpecialistId);
 
   const capResult = await stageSpendCap(taskId, subtasks, effectiveCap);
   if (!capResult.passed) {

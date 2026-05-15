@@ -14,6 +14,10 @@ model Task {
   totalCost   Decimal?
   spendCap    Decimal?
   events      Json?    @default("[]")
+  requestedSpecialistId      String?
+  requestedSpecialistName    String?
+  requestedAgentVersionId    String?
+  requestedAgentVersionHash  String?
   ownerId     String?
   createdAt   DateTime @default(now())
   completedAt DateTime?

@@ -1,5 +1,7 @@
 export type TraceEventType =
   | "coordinator_start"
+  | "selected_agent_pinned"
+  | "selected_agent_unavailable"
   | "task_decomposed"
   | "spend_cap_check"
   | "spend_cap_exceeded"
