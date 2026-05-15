@@ -15,6 +15,7 @@ import {
   setSessionCookie,
   unauthorizedResponse,
 } from "@/lib/auth";
+import { isStellarPublicKey } from "@/lib/stellar-config";
 
 export async function GET() {
   const tasks = await listExecutions();
@@ -28,6 +29,13 @@ export async function POST(request: NextRequest) {
     if (!body.description || body.description.trim().length === 0) {
       return NextResponse.json(
         { error: "Task description is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!isStellarPublicKey(body.walletAddress)) {
+      return NextResponse.json(
+        { error: "A connected Stellar wallet is required to submit a task" },
         { status: 400 }
       );
     }

@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Prism — Agent Specialization Network",
-  description: "One task in, specialized results out. Autonomous AI agents that decompose, execute, and pay each other on-chain.",
+  title: "Verix - Verifiable Autonomous Work Infrastructure",
+  description:
+    "A developer-grade execution layer for multi-agent work, trace commitments, proof receipts, and escrow coordination.",
 };
 
 export default function RootLayout({

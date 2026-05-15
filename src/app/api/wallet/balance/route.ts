@@ -1,15 +1,25 @@
 import { NextResponse } from "next/server";
-import { getCoordinatorUSDCBalance, getCoordinatorAddress } from "@/lib/wallet";
+import { getCoordinatorAddress, getStellarWalletBalanceInfo } from "@/lib/wallet";
+import { isStellarPublicKey } from "@/lib/stellar-config";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const address = getCoordinatorAddress();
-    const balance = await getCoordinatorUSDCBalance();
+    const { searchParams } = new URL(request.url);
+    const requestedAddress = searchParams.get("address");
+    const hasUserAddress = isStellarPublicKey(requestedAddress);
+
+    const address = hasUserAddress ? requestedAddress : getCoordinatorAddress();
+    const balanceInfo = await getStellarWalletBalanceInfo(address);
 
     return NextResponse.json({
-      balance: parseFloat(balance),
+      balance: parseFloat(balanceInfo.balance),
       address,
       network: "stellar-testnet",
+      assetCode: balanceInfo.assetCode,
+      nativeBalance: parseFloat(balanceInfo.nativeBalance),
+      nativeAssetCode: balanceInfo.nativeAssetCode,
+      hasConfiguredAsset: balanceInfo.hasConfiguredAsset,
+      source: hasUserAddress ? "connected-wallet" : "coordinator",
     });
   } catch (error) {
     console.error("[API] Error fetching wallet balance:", error);

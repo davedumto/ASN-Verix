@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
-import { Specialist, ProofPolicy } from "@/types/specialist";
+import { AiModelProvider, Specialist, ProofPolicy } from "@/types/specialist";
 import {
   getSpecialists,
   registerSpecialist,
@@ -13,6 +12,7 @@ import {
   getOrInitSession,
   getCurrentSession,
 } from "@/lib/api-client";
+import VerixMark from "@/components/VerixMark";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -20,7 +20,7 @@ const PROOF_POLICY_OPTIONS: { value: ProofPolicy; label: string; description: st
   {
     value: "trace-only",
     label: "Trace only",
-    description: "Execution log stored locally — no on-chain proof",
+    description: "Execution log stored locally - no proof artifact",
   },
   {
     value: "receipt-proof",
@@ -45,6 +45,12 @@ const PROOF_POLICY_LABELS: Record<ProofPolicy, string> = {
   "receipt-proof": "Receipt",
   "escrow-eligible": "Escrow",
 };
+
+const AI_MODEL_OPTIONS: { value: AiModelProvider; label: string }[] = [
+  { value: "openai", label: "OpenAI (GPT-4o)" },
+  { value: "claude", label: "Claude 3.5" },
+  { value: "groq", label: "Groq Llama 3.3" },
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -71,7 +77,7 @@ export default function SettingsPage() {
   const [capabilities, setCapabilities] = useState("");
   const [priceUsdc, setPriceUsdc] = useState("0.50");
   const [walletAddress, setWalletAddress] = useState("");
-  const [aiModel, setAiModel] = useState<"claude" | "openai">("openai");
+  const [aiModel, setAiModel] = useState<AiModelProvider>("openai");
   const [proofPolicy, setProofPolicy] = useState<ProofPolicy>("trace-only");
   const [apiKey, setApiKey] = useState("");
 
@@ -208,12 +214,7 @@ export default function SettingsPage() {
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link href="/dashboard" className="flex items-center gap-2 group">
-              <div className="w-8 h-8 rounded-full overflow-hidden bg-white/10">
-                <Image src="/prism-logo.jpg" alt="Prism" width={32} height={32} className="object-cover w-full h-full" />
-              </div>
-              <span className="text-sm font-bold tracking-tight group-hover:text-white/80 transition-colors">
-                PRISM
-              </span>
+              <VerixMark inverted />
             </Link>
             <span className="text-white/20 text-sm">/</span>
             <span className="text-sm text-white/60">Agent Settings</span>
@@ -572,19 +573,19 @@ export default function SettingsPage() {
                         AI Model
                         {isEditing && <span className="ml-1 text-white/20">— triggers new version</span>}
                       </label>
-                      <div className="flex gap-2">
-                        {(["openai", "claude"] as const).map((m) => (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {AI_MODEL_OPTIONS.map((option) => (
                           <button
-                            key={m}
+                            key={option.value}
                             type="button"
-                            onClick={() => setAiModel(m)}
+                            onClick={() => setAiModel(option.value)}
                             className={`flex-1 px-3.5 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
-                              aiModel === m
+                              aiModel === option.value
                                 ? "bg-white/15 border-white/30 text-white"
                                 : "bg-white/4 border-white/10 text-white/40 hover:text-white/60"
                             }`}
                           >
-                            {m === "openai" ? "OpenAI (GPT-4o)" : "Claude 3.5"}
+                            {option.label}
                           </button>
                         ))}
                       </div>

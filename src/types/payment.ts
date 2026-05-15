@@ -18,4 +18,10 @@ export interface WalletBalance {
   address: string;
   balance: number;
   network: string;
+  assetCode?: string;
+  nativeBalance?: number;
+  nativeAssetCode?: "XLM";
+  hasConfiguredAsset?: boolean;
+  source?: "connected-wallet" | "coordinator";
+  error?: string;
 }

@@ -6,7 +6,7 @@ import {
   updateSpecialist,
 } from "@/services/discovery";
 import { getReputationStatsForAll } from "@/services/reputation";
-import { ProofPolicy } from "@/types/specialist";
+import { AiModelProvider, ProofPolicy } from "@/types/specialist";
 import { encrypt, maskApiKey } from "@/lib/encryption";
 import { isStellarPublicKey } from "@/lib/stellar-config";
 import {
@@ -18,6 +18,7 @@ import {
 } from "@/lib/auth";
 
 const VALID_PROOF_POLICIES: ProofPolicy[] = ["trace-only", "receipt-proof", "escrow-eligible"];
+const VALID_AI_MODELS: AiModelProvider[] = ["openai", "claude", "groq"];
 const DEMO_STELLAR_WALLET = "G" + "D".repeat(55);
 
 function toProofPolicy(raw: string | undefined): ProofPolicy {
@@ -25,6 +26,13 @@ function toProofPolicy(raw: string | undefined): ProofPolicy {
     return raw as ProofPolicy;
   }
   return "trace-only";
+}
+
+function toAiModel(raw: string | undefined): AiModelProvider {
+  if (raw && VALID_AI_MODELS.includes(raw as AiModelProvider)) {
+    return raw as AiModelProvider;
+  }
+  return "openai";
 }
 
 export async function GET() {
@@ -79,6 +87,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (aiModel !== undefined && !VALID_AI_MODELS.includes(aiModel as AiModelProvider)) {
+      return NextResponse.json(
+        { error: `Invalid AI model - must be one of: ${VALID_AI_MODELS.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
     const specialist = {
       id: `specialist_${name.toLowerCase().replace(/\s+/g, "_")}_${Date.now()}`,
       name,
@@ -92,7 +107,7 @@ export async function POST(request: NextRequest) {
       reputation: 50,
       totalJobs: 0,
       status: "online" as const,
-      aiModel: aiModel === "claude" ? ("claude" as const) : ("openai" as const),
+      aiModel: toAiModel(aiModel),
       apiKey: apiKey ? encrypt(apiKey) : undefined,
       apiKeyMasked: apiKey ? maskApiKey(apiKey) : undefined,
       proofPolicy: toProofPolicy(proofPolicy),
@@ -186,6 +201,13 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    if (aiModel !== undefined && !VALID_AI_MODELS.includes(aiModel as AiModelProvider)) {
+      return NextResponse.json(
+        { error: `Invalid AI model - must be one of: ${VALID_AI_MODELS.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
     // Look up existing to check ownership
     const { specialist: existing, ownerId } = await updateSpecialist(id, {}); // dry read
     if (!existing) {
@@ -201,7 +223,7 @@ export async function PUT(request: NextRequest) {
     if (priceUsdc !== undefined) fields.priceUsdc = parseFloat(priceUsdc);
     if (walletAddress !== undefined) fields.walletAddress = walletAddress || DEMO_STELLAR_WALLET;
     if (proofPolicy !== undefined) fields.proofPolicy = proofPolicy as ProofPolicy;
-    if (aiModel !== undefined) fields.aiModel = aiModel === "claude" ? "claude" : "openai";
+    if (aiModel !== undefined) fields.aiModel = toAiModel(aiModel);
     if (capabilities !== undefined) {
       fields.capabilities = Array.isArray(capabilities)
         ? capabilities

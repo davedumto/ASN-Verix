@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { prisma } from "@/lib/db";
 import { DEMO_SPECIALISTS } from "@/lib/demo-scenario";
-import { AgentVersion, ProofPolicy, Specialist } from "@/types/specialist";
+import { AgentVersion, AiModelProvider, ProofPolicy, Specialist } from "@/types/specialist";
 
 /**
  * Discovery Service
@@ -19,6 +19,11 @@ let seedPromise: Promise<void> | null = null;
 function toProofPolicy(raw: string | null | undefined): ProofPolicy {
   if (raw === "receipt-proof" || raw === "escrow-eligible") return raw;
   return "trace-only";
+}
+
+function toAiModelProvider(raw: string | null | undefined): AiModelProvider {
+  if (raw === "claude" || raw === "groq") return raw;
+  return "openai";
 }
 
 function toSpecialist(row: {
@@ -50,7 +55,7 @@ function toSpecialist(row: {
     reputation: row.reputation,
     totalJobs: row.totalJobs,
     status: row.status as Specialist["status"],
-    aiModel: row.aiModel === "claude" ? "claude" : "openai",
+    aiModel: toAiModelProvider(row.aiModel),
     apiKey: row.apiKey ?? undefined,
     apiKeyMasked: row.apiKeyMasked ?? undefined,
     ownerId: row.ownerId ?? undefined,
@@ -99,7 +104,8 @@ export function computeVersionHash(
   priceUsdc: number,
   walletAddress: string,
   capabilities: string[],
-  proofPolicy: string
+  proofPolicy: string,
+  aiModel = "openai"
 ): string {
   const payload = [
     name,
@@ -108,6 +114,7 @@ export function computeVersionHash(
     walletAddress.toLowerCase(),
     [...capabilities].sort().join(","),
     proofPolicy,
+    aiModel,
   ].join("|");
   return createHash("sha256").update(payload).digest("hex");
 }
@@ -161,7 +168,8 @@ async function ensureSeeded(): Promise<void> {
           specialist.priceUsdc,
           specialist.walletAddress,
           specialist.capabilities,
-          specialist.proofPolicy
+          specialist.proofPolicy,
+          specialist.aiModel ?? "openai"
         );
         await prisma.agentVersion.create({
           data: {
@@ -290,7 +298,8 @@ export async function registerSpecialist(
     Number(row.priceUsdc),
     row.walletAddress,
     row.capabilities,
-    row.proofPolicy
+    row.proofPolicy,
+    row.aiModel ?? "openai"
   );
 
   await prisma.agentVersion.upsert({
@@ -395,7 +404,8 @@ export async function updateSpecialist(
       Number(updated.priceUsdc),
       updated.walletAddress,
       updated.capabilities,
-      updated.proofPolicy
+      updated.proofPolicy,
+      updated.aiModel ?? "openai"
     );
 
     await prisma.agentVersion.create({

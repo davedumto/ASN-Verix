@@ -29,7 +29,33 @@ export function getCoordinatorAddress(): string {
  */
 export async function getCoordinatorUSDCBalance(): Promise<string> {
   const address = getCoordinatorAddress();
+  const info = await getStellarWalletBalanceInfo(address);
+  return info.balance;
+}
+
+/**
+ * Fetch a Stellar account balance for the configured USDC asset. If USDC is not
+ * configured, return native XLM so the UI can still prove the wallet exists.
+ */
+export async function getStellarWalletBalance(address: string): Promise<string> {
+  const info = await getStellarWalletBalanceInfo(address);
+  return info.balance;
+}
+
+export async function getStellarWalletBalanceInfo(address: string): Promise<{
+  balance: string;
+  assetCode: string;
+  nativeBalance: string;
+  nativeAssetCode: "XLM";
+  hasConfiguredAsset: boolean;
+}> {
+  if (!isStellarPublicKey(address)) {
+    throw new Error("Wallet address must be a Stellar public key (G...).");
+  }
+
   const account = await fetchStellarAccount(address);
+  const native = account.balances.find((b) => b.asset_type === "native");
+  const nativeBalance = native?.balance ?? "0";
 
   if (isConfiguredStellarAsset()) {
     const usdc = account.balances.find(
@@ -37,11 +63,22 @@ export async function getCoordinatorUSDCBalance(): Promise<string> {
         b.asset_code === STELLAR_USDC.code &&
         b.asset_issuer === STELLAR_USDC.issuer
     );
-    return usdc?.balance ?? "0";
+    return {
+      balance: usdc?.balance ?? "0",
+      assetCode: STELLAR_USDC.code ?? "USDC",
+      nativeBalance,
+      nativeAssetCode: "XLM",
+      hasConfiguredAsset: Boolean(usdc),
+    };
   }
 
-  const native = account.balances.find((b) => b.asset_type === "native");
-  return native?.balance ?? "0";
+  return {
+    balance: nativeBalance,
+    assetCode: "XLM",
+    nativeBalance,
+    nativeAssetCode: "XLM",
+    hasConfiguredAsset: true,
+  };
 }
 
 export function generateMockWallet(): { address: string; privateKey: string } {

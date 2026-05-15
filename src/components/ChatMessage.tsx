@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Image from "next/image";
 import Link from "next/link";
+import { ChevronRight, ExternalLink, LoaderCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TaskResult } from "@/types/task";
 import { ExecutionReceipt } from "@/types/trace";
@@ -56,17 +56,17 @@ const roleConfig: Record<
             "bg-accent text-white ml-auto rounded-2xl rounded-br-md",
     },
     coordinator: {
-        label: "Prism",
+        label: "Verix",
         bubbleClass:
             "bg-surface border border-border text-ink rounded-2xl rounded-bl-md",
     },
     specialist: {
-        label: "Prism",
+        label: "Verix",
         bubbleClass:
             "bg-surface border border-border text-ink rounded-2xl rounded-bl-md",
     },
     payment: {
-        label: "Prism",
+        label: "Verix",
         bubbleClass:
             "bg-surface border border-border text-ink rounded-2xl rounded-bl-md",
     },
@@ -75,12 +75,12 @@ const roleConfig: Record<
         bubbleClass: "",
     },
     result: {
-        label: "Prism",
+        label: "Verix",
         bubbleClass:
             "bg-surface border border-border text-ink rounded-2xl",
     },
     thinking: {
-        label: "Prism",
+        label: "Verix",
         bubbleClass: "",
     },
 };
@@ -91,19 +91,13 @@ const msgVariants = {
     visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" as const } },
 };
 
-function PrismAvatar({ size = 32 }: { size?: number }) {
+function VerixAvatar({ size = 32 }: { size?: number }) {
     return (
         <div
-            className="rounded-full overflow-hidden shrink-0 bg-white border border-border"
+            className="shrink-0 border border-ink bg-ink text-white grid place-items-center font-mono font-semibold"
             style={{ width: size, height: size }}
         >
-            <Image
-                src="/prism-logo.jpg"
-                alt="Prism"
-                width={size}
-                height={size}
-                className="object-cover w-full h-full"
-            />
+            <span style={{ fontSize: Math.max(9, Math.floor(size / 3)) }}>VX</span>
         </div>
     );
 }
@@ -125,7 +119,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
                 className="flex justify-center py-2"
             >
                 <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-surface-tertiary border border-border">
-                    <PrismAvatar size={16} />
+                    <VerixAvatar size={16} />
                     <span
                         className={`text-xs ${message.status === "error"
                             ? "text-error"
@@ -180,7 +174,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             className="flex gap-3 py-2 pr-16"
         >
             {/* Avatar */}
-            <PrismAvatar />
+            <VerixAvatar />
 
             {/* Bubble */}
             <div className={`max-w-[85%] px-4 py-3 ${config.bubbleClass}`}>
@@ -237,7 +231,7 @@ function ThinkingBlock({ message }: { message: ChatMessageData }) {
             className="flex gap-3 py-2"
         >
             {/* Avatar */}
-            <PrismAvatar />
+            <VerixAvatar />
 
             {/* Thinking container */}
             <div className="flex-1 max-w-[85%]">
@@ -245,17 +239,13 @@ function ThinkingBlock({ message }: { message: ChatMessageData }) {
                     onClick={() => setIsOpen(!isOpen)}
                     className="flex items-center gap-2 text-xs text-ink-muted hover:text-ink-secondary transition-colors py-1 group"
                 >
-                    <motion.svg
-                        animate={{ rotate: isOpen ? 90 : 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="w-3 h-3"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        strokeWidth={2.5}
-                        stroke="currentColor"
-                    >
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                    </motion.svg>
+                        <motion.span
+                            animate={{ rotate: isOpen ? 90 : 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="grid h-3 w-3 place-items-center"
+                        >
+                            <ChevronRight className="h-3 w-3" aria-hidden="true" />
+                        </motion.span>
                     {isComplete ? (
                         <span>Processed for {duration.toFixed(1)}s</span>
                     ) : (
@@ -353,7 +343,7 @@ function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: 
         >
             <div className="flex gap-3">
                 {/* Avatar */}
-                <PrismAvatar />
+                <VerixAvatar />
 
                 {/* Card */}
                 <div className="flex-1 bg-surface border border-border rounded-2xl overflow-hidden">
@@ -364,29 +354,31 @@ function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: 
                             animate={{ opacity: 1, height: "auto" }}
                             className="px-5 py-2.5 bg-violet-50 border-b border-violet-200 flex items-center gap-2"
                         >
-                            <span className="text-violet-500 text-sm">✓</span>
-                            <span className="text-xs font-semibold text-violet-700">Cryptographically Verified</span>
+                            <span className="text-violet-500 text-sm">OK</span>
+                            <span className="text-xs font-semibold text-violet-700">Workflow Verified</span>
                             <span className="text-[10px] text-violet-500 ml-1">
-                                · receipt integrity · spend cap · payments · agent membership
+                                receipt integrity / spend cap / payment intents / agent membership
                             </span>
                         </motion.div>
                     )}
 
                     {/* Header */}
-                    <div className="px-5 py-3 border-b border-border bg-linear-to-r from-violet-50 to-indigo-50 flex items-center justify-between">
-                        <span className="text-xs font-semibold text-violet-700">Task Complete</span>
+                    <div className="px-5 py-3 border-b border-border bg-surface-secondary flex items-center justify-between">
+                        <span className="text-xs font-semibold text-ink">Execution Complete</span>
                         <div className="flex items-center gap-3">
                             <span className="text-xs text-ink-muted font-mono">
                                 {result.totalTime.toFixed(1)}s &middot; ${result.totalCost.toFixed(2)} USDC
                             </span>
                             {taskId && (
                                 <Link href={`/trace/${taskId}`} className="text-[10px] font-medium text-violet-600 hover:text-violet-800 transition-colors underline underline-offset-2">
-                                    View Trace →
+                                    View Trace
+                                    <ExternalLink className="ml-1 inline h-3 w-3" aria-hidden="true" />
                                 </Link>
                             )}
                             {taskId && (
                                 <Link href={`/receipts/${taskId}`} className="text-[10px] font-medium text-emerald-600 hover:text-emerald-800 transition-colors underline underline-offset-2">
-                                    View Receipt →
+                                    View Receipt
+                                    <ExternalLink className="ml-1 inline h-3 w-3" aria-hidden="true" />
                                 </Link>
                             )}
                         </div>
@@ -467,8 +459,8 @@ function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: 
                                             </div>
                                         )}
                                         <div className="flex items-center justify-between">
-                                            <span className="text-ink-muted">Gas</span>
-                                            <span className="text-success">Stellar low-fee settlement</span>
+                                            <span className="text-ink-muted">Settlement mode</span>
+                                            <span className="text-success">Stellar/Trustless Work intent</span>
                                         </div>
                                     </div>
                                 </motion.div>
@@ -499,7 +491,12 @@ function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: 
                                             disabled={verifying}
                                             className="text-[9px] px-2 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-300 hover:bg-violet-200 transition-colors disabled:opacity-50"
                                         >
-                                            {verifying ? "Verifying…" : "Verify Proof"}
+                                            {verifying ? (
+                                                <span className="inline-flex items-center gap-1">
+                                                    <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                                    Verifying...
+                                                </span>
+                                            ) : "Verify Proof"}
                                         </button>
                                     )}
                                     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium ${
@@ -519,11 +516,11 @@ function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: 
                             {proof && (
                                 <p className="text-[9px] text-ink-muted mb-2.5 leading-relaxed">
                                     {isVerified
-                                        ? "This receipt is cryptographically attested: receipt integrity, spend cap compliance, payment correctness, and agent membership are all verified."
+                                        ? "This local workflow proof verifies receipt integrity, spend cap compliance, payment-intent totals, and agent membership."
                                         : proof.status === "proven"
-                                        ? "Proof generated. Click ‘Verify Proof’ to run integrity checks."
+                                        ? "Proof journal generated. Run verification to commit the receipt status."
                                         : proof.status === "running"
-                                        ? "Proof generation in progress…"
+                                        ? "Proof generation in progress..."
                                         : proof.status === "failed"
                                         ? `Proof generation failed: ${proof.errorMsg ?? "unknown error"}`
                                         : "Awaiting proof generation."}
@@ -547,17 +544,13 @@ function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: 
                                 onClick={() => setShowTechDetails(!showTechDetails)}
                                 className="mt-2 flex items-center gap-1 text-[9px] text-ink-muted hover:text-ink-secondary transition-colors"
                             >
-                                <motion.svg
+                                <motion.span
                                     animate={{ rotate: showTechDetails ? 90 : 0 }}
                                     transition={{ duration: 0.18 }}
-                                    className="w-2.5 h-2.5"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    strokeWidth={2.5}
-                                    stroke="currentColor"
+                                    className="grid h-2.5 w-2.5 place-items-center"
                                 >
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                                </motion.svg>
+                                    <ChevronRight className="h-2.5 w-2.5" aria-hidden="true" />
+                                </motion.span>
                                 Technical details
                             </button>
 

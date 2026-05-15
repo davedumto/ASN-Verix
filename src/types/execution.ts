@@ -11,7 +11,7 @@ export interface AgentExecutionEnvelope {
   agentVersionId: string | undefined;
   agentVersionHash: string | undefined;
   model: string;
-  provider: "claude" | "openai" | "fallback";
+  provider: "claude" | "openai" | "groq" | "fallback";
   promptHash: string;
   inputHash: string;
   outputHash: string;

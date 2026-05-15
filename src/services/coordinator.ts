@@ -33,6 +33,8 @@ const openai = new OpenAI({
   apiKey: env.OPENAI_API_KEY,
 });
 
+const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // STAGE TYPES
 // ─────────────────────────────────────────────────────────────────────────────
@@ -64,7 +66,7 @@ interface ExecuteResult {
 interface SpecialistResult {
   output: string;
   model: string;
-  provider: "claude" | "openai" | "fallback";
+  provider: "claude" | "openai" | "groq" | "fallback";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -659,7 +661,9 @@ Provide a comprehensive, professional response that demonstrates your expertise.
 
 Format your response in markdown. Be thorough but concise.`;
 
-  const preferClaude = specialist?.aiModel === "claude";
+  const preferredProvider = specialist?.aiModel ?? "openai";
+  const preferClaude = preferredProvider === "claude";
+  const preferGroq = preferredProvider === "groq";
 
   let agentApiKey: string | undefined;
   if (specialist?.apiKey) {
@@ -695,11 +699,41 @@ Format your response in markdown. Be thorough but concise.`;
     }
   }
 
+  if (preferGroq) {
+    try {
+      console.log(`[${subtask.specialistName}] Using Groq (preferred)...`);
+      const groqApiKey = agentApiKey ?? env.GROQ_API_KEY;
+      if (!groqApiKey) {
+        throw new Error("Missing GROQ_API_KEY");
+      }
+
+      const groqClient = new OpenAI({
+        apiKey: groqApiKey,
+        baseURL: GROQ_BASE_URL,
+      });
+      const completion = await groqClient.chat.completions.create({
+        model: env.GROQ_MODEL,
+        max_tokens: 1500,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (content) {
+        console.log(`[${subtask.specialistName}] Groq succeeded`);
+        return { output: content, model: env.GROQ_MODEL, provider: "groq" };
+      }
+
+      return { output: "Analysis completed successfully.", model: env.GROQ_MODEL, provider: "groq" };
+    } catch (error) {
+      console.warn(`[${subtask.specialistName}] Groq failed, falling back to OpenAI:`, error);
+    }
+  }
+
   try {
-    const modelInfo = preferClaude ? "(OpenAI fallback)" : "(primary)";
+    const modelInfo = preferClaude || preferGroq ? "(OpenAI fallback)" : "(primary)";
     console.log(`[${subtask.specialistName}] Using OpenAI ${modelInfo}...`);
 
-    const openaiClient = (!preferClaude && agentApiKey)
+    const openaiClient = (!preferClaude && !preferGroq && agentApiKey)
       ? new OpenAI({ apiKey: agentApiKey })
       : openai;
     const completion = await openaiClient.chat.completions.create({
@@ -717,7 +751,7 @@ Format your response in markdown. Be thorough but concise.`;
     return { output: "Analysis completed successfully.", model: "gpt-4o", provider: "openai" };
   } catch (error) {
     console.warn(`[${subtask.specialistName}] OpenAI also failed, using fallback response:`, error);
-    const fallbackText = `# ${subtask.specialistName} Report\n\nAnalysis completed for: "${originalTask.substring(0, 100)}"\n\nBoth AI providers were unavailable. Please try again later.\n\n---\n*${subtask.specialistName} | $${subtask.cost?.toFixed(2)} USDC via Stellar escrow*`;
+    const fallbackText = `# ${subtask.specialistName} Report\n\nAnalysis completed for: "${originalTask.substring(0, 100)}"\n\nConfigured AI providers were unavailable. Please try again later.\n\n---\n*${subtask.specialistName} | $${subtask.cost?.toFixed(2)} USDC via Stellar escrow*`;
     return { output: fallbackText, model: "none", provider: "fallback" };
   }
 }

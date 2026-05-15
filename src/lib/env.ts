@@ -95,6 +95,8 @@ function buildEnv() {
 
     CLAUDE_API_KEY: process.env.CLAUDE_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    GROQ_API_KEY: process.env.GROQ_API_KEY,
+    GROQ_MODEL: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
 
     // ── Blockchain ───────────────────────────────────────────────────────────
 
