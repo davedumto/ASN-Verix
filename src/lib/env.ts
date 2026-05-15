@@ -142,16 +142,23 @@ function buildEnv() {
     /** API key for Trustless Work (required when ESCROW_MODE=live). */
     TRUSTLESS_WORK_API_KEY: process.env.TRUSTLESS_WORK_API_KEY,
 
-    // ── Proof / Trustless Work ────────────────────────────────────────────────
+    /**
+     * Stellar signer address used as releaseSigner when calling TW release-funds.
+     * Typically the TW key ID (e.g. "RL_ZDxkj7Rf…"). Maps to TRUSTLESS_WORK_KEY_ID in .env.
+     */
+    TRUSTLESS_WORK_SIGNER_ADDRESS: process.env.TRUSTLESS_WORK_SIGNER_ADDRESS ?? process.env.TRUSTLESS_WORK_KEY_ID,
+
+    // ── Proof ─────────────────────────────────────────────────────────────────
 
     /**
      * Controls which proof backend is used:
-     *   "disabled"      — no proof generation; receipt stays at "proof_ready" status
-     *   "local"         — runs the TypeScript deterministic verifier in-process (no external calls)
-     *   "trustlesswork" — submits the ProofJournal to the Trustless Work API for on-chain attestation
-     *                     (reuses TRUSTLESS_WORK_API_URL + TRUSTLESS_WORK_API_KEY)
+     *   "disabled" — no proof generation; receipt stays at "proof_ready" status
+     *   "local"    — runs the TypeScript deterministic verifier in-process
+     *
+     * Proof verification automatically triggers Trustless Work escrow milestone
+     * release for milestones with releaseCondition === "proof_verified".
      */
-    PROOF_MODE: (process.env.PROOF_MODE ?? "local") as "disabled" | "local" | "trustlesswork",
+    PROOF_MODE: (process.env.PROOF_MODE ?? "local") as "disabled" | "local",
   } as const;
 }
 

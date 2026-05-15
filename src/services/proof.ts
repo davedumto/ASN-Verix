@@ -3,11 +3,13 @@
  *
  * Generates and verifies workflow integrity proofs from ExecutionReceipts.
  *
- * Three modes (controlled by PROOF_MODE env var):
- *   "disabled"      — no-op; receipt stays at "proof_ready"
- *   "local"         — runs TypeScript deterministic verifier in-process
- *   "trustlesswork" — runs local verifier then submits the ProofJournal to Trustless Work
- *                     for on-chain attestation (reuses TRUSTLESS_WORK_API_URL + API_KEY)
+ * Two modes (controlled by PROOF_MODE env var):
+ *   "disabled" — no-op; receipt stays at "proof_ready"
+ *   "local"    — runs TypeScript deterministic verifier in-process
+ *
+ * After verifyProof() passes all 5 integrity checks, it automatically triggers
+ * Trustless Work escrow milestone release for milestones with
+ * releaseCondition === "proof_verified" (via releaseEscrowMilestones).
  */
 
 import { env } from "@/lib/env";
@@ -92,83 +94,6 @@ async function runLocalVerifier(
   return result.journal;
 }
 
-// ── Trustless Work attestation prover ─────────────────────────────────────────
-//
-// Runs the local deterministic verifier first to produce the journal, then
-// submits the journal to Trustless Work for on-chain attestation. The TX hash
-// returned by Trustless Work is stored as artifactUri on the Proof row.
-
-async function runTrustlessWorkProver(
-  proofId: string,
-  taskId: string,
-  input: ProofInput
-): Promise<ProofJournal> {
-  if (!env.TRUSTLESS_WORK_API_URL) {
-    throw new Error(
-      "[Proof] PROOF_MODE=trustlesswork but TRUSTLESS_WORK_API_URL is not set."
-    );
-  }
-  if (!env.TRUSTLESS_WORK_API_KEY) {
-    throw new Error(
-      "[Proof] PROOF_MODE=trustlesswork but TRUSTLESS_WORK_API_KEY is not set."
-    );
-  }
-
-  // Step 1: run local verifier to produce the journal
-  const localResult = verify(input);
-  if (!localResult.ok) {
-    throw new Error(
-      `[Proof] Local verification failed before Trustless Work attestation. ` +
-        `Failed constraints: ${localResult.failedConstraints.join(", ")}`
-    );
-  }
-
-  const journal: ProofJournal = {
-    ...localResult.journal,
-    verifierType: "trustlesswork",
-  };
-
-  // Step 2: submit journal to Trustless Work for on-chain attestation
-  // TODO: align endpoint path and payload shape with actual Trustless Work API spec.
-  // Expected response: { attestationId: string; txHash?: string; status: string }
-  const baseUrl = env.TRUSTLESS_WORK_API_URL.replace(/\/$/, "");
-  const res = await fetch(`${baseUrl}/v1/proofs`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${env.TRUSTLESS_WORK_API_KEY}`,
-    },
-    body: JSON.stringify({
-      proofId,
-      taskId,
-      receiptHash: input.receiptHash,
-      traceRoot: input.traceRoot,
-      journal,
-    }),
-  });
-
-  if (!res.ok) {
-    let errMsg = `Trustless Work proof attestation failed (HTTP ${res.status})`;
-    try {
-      const body = await res.json();
-      errMsg = body.message ?? body.error ?? errMsg;
-    } catch { /* ignore */ }
-    throw new Error(errMsg);
-  }
-
-  const attestation = await res.json() as { attestationId?: string; txHash?: string; status?: string };
-
-  // Store the tx hash as the artifact URI so it can be linked from the UI
-  if (attestation.txHash) {
-    await prisma.proof.update({
-      where: { id: proofId },
-      data: { artifactUri: attestation.txHash },
-    }).catch(() => { /* non-fatal */ });
-  }
-
-  return journal;
-}
-
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -210,10 +135,7 @@ export async function generateProof(receipt: ExecutionReceipt): Promise<ProofRec
 
   try {
     const input = receiptToProofInput(receipt);
-    const journal =
-      env.PROOF_MODE === "trustlesswork"
-        ? await runTrustlessWorkProver(proof.id, receipt.taskId, input)
-        : await runLocalVerifier(proof.id, receipt.taskId, input);
+    const journal = await runLocalVerifier(proof.id, receipt.taskId, input);
 
     const updated = await prisma.proof.update({
       where: { id: proof.id },
@@ -345,6 +267,33 @@ export async function verifyProof(proofId: string): Promise<ProofRecord> {
       },
     }
   ).catch(() => { /* non-fatal */ });
+
+  // Trigger Trustless Work escrow milestone release for proof_verified milestones.
+  // Dynamic import avoids a circular dependency: proof ← escrow ← trace ← proof.
+  const verifiedReceipt = await prisma.executionReceipt.findUnique({
+    where: { taskId: proof.taskId },
+  });
+  if (verifiedReceipt) {
+    import("@/services/escrow")
+      .then(({ releaseEscrowMilestones }) => {
+        const receipt = {
+          id: verifiedReceipt.id,
+          taskId: verifiedReceipt.taskId,
+          taskInputHash: verifiedReceipt.taskInputHash,
+          agentVersionHashes: verifiedReceipt.agentVersionHashes,
+          spendCap: verifiedReceipt.spendCap != null ? Number(verifiedReceipt.spendCap) : undefined,
+          totalCost: verifiedReceipt.totalCost != null ? Number(verifiedReceipt.totalCost) : undefined,
+          traceRoot: verifiedReceipt.traceRoot,
+          outputHash: verifiedReceipt.outputHash ?? undefined,
+          paymentSummary: (verifiedReceipt.paymentSummary as unknown[]) as import("@/types/trace").PaymentSummaryItem[],
+          receiptHash: verifiedReceipt.receiptHash,
+          status: "verified" as const,
+          createdAt: verifiedReceipt.createdAt.toISOString(),
+        };
+        return releaseEscrowMilestones(proof.taskId, receipt);
+      })
+      .catch((err) => console.warn("[Proof] Escrow milestone release failed:", err));
+  }
 
   return toProofRecord(updated);
 }
