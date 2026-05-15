@@ -148,7 +148,7 @@ export function verify(input: ProofInput): VerificationResult {
     agentMembershipOk,
     receiptIntegrityOk,
     verifiedAt: new Date().toISOString(),
-    verifierType: "local",
+    verifierType: "local" as const,
   };
 
   return { ok: failedConstraints.length === 0, journal, failedConstraints };

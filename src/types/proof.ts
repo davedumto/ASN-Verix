@@ -79,7 +79,7 @@ export interface ProofJournal {
   verifiedAt: string;
 
   /** Which verifier produced this journal. */
-  verifierType: "local" | "boundless";
+  verifierType: "local" | "trustlesswork";
 }
 
 // ── Proof lifecycle ───────────────────────────────────────────────────────────
