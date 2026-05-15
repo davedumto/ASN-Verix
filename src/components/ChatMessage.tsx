@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { TaskResult } from "@/types/task";
 import { ExecutionReceipt } from "@/types/trace";
@@ -38,6 +39,7 @@ export interface ChatMessageData {
     status?: "info" | "success" | "error" | "pending";
     specialistName?: string;
     result?: TaskResult;
+    taskId?: string;
     receipt?: ExecutionReceipt;
     thinkingSteps?: ThinkingStep[];
     thinkingDuration?: number;
@@ -160,7 +162,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
 
     // --- Result message: full-width rich card ---
     if (message.role === "result" && message.result) {
-        return <ResultCard result={message.result} receipt={message.receipt} />;
+        return <ResultCard result={message.result} taskId={message.taskId} receipt={message.receipt} />;
     }
 
     // --- Thinking block: collapsible process steps ---
@@ -314,7 +316,7 @@ function ThinkingBlock({ message }: { message: ChatMessageData }) {
 }
 
 // ---------- Result Card (embedded inline) ----------
-function ResultCard({ result, receipt }: { result: TaskResult; receipt?: ExecutionReceipt }) {
+function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: string; receipt?: ExecutionReceipt }) {
     const [activeTab, setActiveTab] = useState(0);
 
     return (
@@ -337,10 +339,20 @@ function ResultCard({ result, receipt }: { result: TaskResult; receipt?: Executi
                                 Task Complete
                             </span>
                         </div>
-                        <span className="text-xs text-ink-muted font-mono">
-                            {result.totalTime.toFixed(1)}s &middot; $
-                            {result.totalCost.toFixed(2)} USDC
-                        </span>
+                        <div className="flex items-center gap-3">
+                            <span className="text-xs text-ink-muted font-mono">
+                                {result.totalTime.toFixed(1)}s &middot; $
+                                {result.totalCost.toFixed(2)} USDC
+                            </span>
+                            {taskId && (
+                                <Link
+                                    href={`/trace/${taskId}`}
+                                    className="text-[10px] font-medium text-violet-600 hover:text-violet-800 transition-colors underline underline-offset-2"
+                                >
+                                    View Trace →
+                                </Link>
+                            )}
+                        </div>
                     </div>
 
                     {/* Summary */}
