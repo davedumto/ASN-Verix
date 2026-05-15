@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { ArrowUp, LoaderCircle, Menu, Settings, Unplug, Wallet } from "lucide-react";
 import ChatMessage, { ChatMessageData, ThinkingStep } from "@/components/ChatMessage";
@@ -97,6 +97,7 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
+  const [selectedSpecialistId, setSelectedSpecialistId] = useState<string | null>(null);
 
   // Confirmation modal
   const [showConfirm, setShowConfirm] = useState(false);
@@ -110,6 +111,11 @@ export default function Dashboard() {
 
   // SSE connection for live trace events
   const sseRef = useRef<EventSource | null>(null);
+
+  const selectedSpecialist = useMemo(
+    () => specialists.find((s) => s.id === selectedSpecialistId) ?? null,
+    [specialists, selectedSpecialistId]
+  );
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -231,7 +237,17 @@ export default function Dashboard() {
       })
       .catch(() => fetchWalletBalance());
     fetchHistory();
-    getSpecialists().then(setSpecialists).catch(() => { });
+    getSpecialists()
+      .then((data) => {
+        setSpecialists(data);
+        if (typeof window !== "undefined") {
+          const agentId = new URLSearchParams(window.location.search).get("agent");
+          if (agentId && data.some((s) => s.id === agentId)) {
+            setSelectedSpecialistId(agentId);
+          }
+        }
+      })
+      .catch(() => { });
     // Ensure the session is initialised and cached in localStorage
     getOrInitSession().then(setSessionId).catch(() => { });
     getWalletOptions().then(setWalletOptions).catch(() => setWalletOptions([]));
@@ -355,6 +371,11 @@ export default function Dashboard() {
 
   // Estimate cost
   const estimateCost = (description: string) => {
+    if (selectedSpecialist) {
+      setEstimatedCost(selectedSpecialist.priceUsdc);
+      return;
+    }
+
     const lower = description.toLowerCase();
     const hasCode =
       lower.includes("code") ||
@@ -486,13 +507,16 @@ export default function Dashboard() {
         spendCap,
         walletAddress,
         walletProvider: walletProviderName ?? walletProvider ?? undefined,
+        requestedSpecialistId: selectedSpecialist?.id,
       });
       setTaskId(response.task_id);
       setTaskStatus("decomposing");
       setEstimatedCost(response.estimated_cost);
 
       addThinkingStep({
-        message: `Task decomposed into ${response.subtasks.length} subtask(s).`,
+        message: selectedSpecialist
+          ? `Marketplace agent pinned: ${selectedSpecialist.name}.`
+          : `Task decomposed into ${response.subtasks.length} subtask(s).`,
         status: "success",
         type: "coordinator",
         timestamp: new Date().toISOString(),
@@ -804,9 +828,9 @@ export default function Dashboard() {
                 Start a verifiable execution.
               </h1>
               <p className="text-sm text-ink-secondary text-center max-w-xl mb-10 leading-6">
-                Submit complex work, route it to specialist agents, capture a
-                hash-chained trace, and produce a canonical receipt for local
-                proof verification and escrow coordination.
+                {selectedSpecialist
+                  ? `Submit work directly to ${selectedSpecialist.name}, capture a hash-chained trace, and produce a canonical receipt for verification.`
+                  : "Submit complex work, route it to specialist agents, capture a hash-chained trace, and produce a canonical receipt for local proof verification and escrow coordination."}
               </p>
 
               {/* Suggestion Chips */}
@@ -918,13 +942,40 @@ export default function Dashboard() {
         {/* Input Bar */}
         <div className="shrink-0 border-t border-border bg-surface">
           <div className="max-w-3xl mx-auto px-4 py-3">
+            {selectedSpecialist && (
+              <div className="mb-3 flex flex-col gap-2 rounded-md border border-border bg-surface-secondary px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="verix-label mb-1">Marketplace agent selected</p>
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="font-semibold text-ink">{selectedSpecialist.name}</span>
+                    <span className="font-mono text-xs text-ink-muted">
+                      ${selectedSpecialist.priceUsdc.toFixed(2)} USDC
+                    </span>
+                    <span className="text-xs text-ink-muted">v{selectedSpecialist.currentVersion}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSpecialistId(null)}
+                  className="self-start border border-border px-2 py-1 text-xs text-ink-muted hover:border-border-strong hover:text-ink sm:self-auto"
+                >
+                  Use coordinator
+                </button>
+              </div>
+            )}
             <div className="relative flex items-end gap-2 bg-surface border border-border rounded-md px-4 py-2 focus-within:border-border-strong transition-all">
               <textarea
                 ref={inputRef}
                 value={inputValue}
                 onChange={handleTextareaInput}
                 onKeyDown={handleKeyDown}
-                placeholder={walletSource === "connected-wallet" ? "Describe your task..." : "Connect a wallet to submit an execution..."}
+                placeholder={
+                  walletSource === "connected-wallet"
+                    ? selectedSpecialist
+                      ? `Describe the task for ${selectedSpecialist.name}...`
+                      : "Describe your task..."
+                    : "Connect a wallet to submit an execution..."
+                }
                 rows={1}
                 disabled={isSubmitting}
                 className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-muted resize-none focus:outline-none py-1.5 max-h-40 chat-scrollbar"
@@ -1024,6 +1075,14 @@ export default function Dashboard() {
                   {pendingDescription}
                 </span>
               </div>
+              {selectedSpecialist && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-ink-muted">Selected Agent</span>
+                  <span className="text-ink text-right max-w-[60%] truncate">
+                    {selectedSpecialist.name} · v{selectedSpecialist.currentVersion}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between text-sm">
                 <span className="text-ink-muted">Estimated Cost</span>
                 <span className="font-mono font-semibold text-ink">

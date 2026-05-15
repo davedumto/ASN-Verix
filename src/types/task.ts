@@ -20,6 +20,10 @@ export interface Task {
   receipt?: ExecutionReceipt;
   spendCap?: number;
   walletAddress?: string;
+  requestedSpecialistId?: string;
+  requestedSpecialistName?: string;
+  requestedAgentVersionId?: string;
+  requestedAgentVersionHash?: string;
   ownerId?: string;
   createdAt: string;
   completedAt?: string;
@@ -76,6 +80,7 @@ export interface CreateTaskRequest {
   spendCap?: number;
   walletAddress: string;
   walletProvider?: string;
+  requestedSpecialistId?: string;
 }
 
 export interface CreateTaskResponse {

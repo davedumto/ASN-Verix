@@ -13,6 +13,8 @@ import {
   failJob,
   startJob,
 } from "@/services/jobs";
+import { getActiveAgentVersion, getSpecialistById } from "@/services/discovery";
+import { Specialist } from "@/types/specialist";
 
 type ExecutionTransition = {
   from: TaskStatus[];
@@ -34,10 +36,21 @@ const ALLOWED_TRANSITIONS: ExecutionTransition[] = [
   { from: ["processing"], to: "completed" },
 ];
 
-export function estimateTaskCost(description: string): Pick<
+export function estimateTaskCost(
+  description: string,
+  requestedSpecialist?: Specialist
+): Pick<
   CreateTaskResponse,
   "estimated_cost" | "subtasks"
 > {
+  if (requestedSpecialist) {
+    const capability = requestedSpecialist.capabilities[0] ?? "general";
+    return {
+      estimated_cost: requestedSpecialist.priceUsdc,
+      subtasks: [`${capability} (${requestedSpecialist.name})`],
+    };
+  }
+
   const lower = description.toLowerCase();
   const subtasks: string[] = [];
   let estimatedCost = 0;
@@ -94,12 +107,22 @@ export async function createExecution(
   ownerId?: string
 ): Promise<{ task: Task; estimate: Pick<CreateTaskResponse, "estimated_cost" | "subtasks"> }> {
   const description = request.description.trim();
+  const requestedSpecialist = request.requestedSpecialistId
+    ? await getSpecialistById(request.requestedSpecialistId)
+    : undefined;
+  const requestedVersion = requestedSpecialist
+    ? await getActiveAgentVersion(requestedSpecialist.id)
+    : null;
   const task: Task = {
     id: crypto.randomUUID(),
     description,
     status: "pending",
     spendCap: request.spendCap ?? DEFAULT_SPEND_CAP,
     walletAddress: request.walletAddress,
+    requestedSpecialistId: requestedSpecialist?.id,
+    requestedSpecialistName: requestedSpecialist?.name,
+    requestedAgentVersionId: requestedVersion?.id,
+    requestedAgentVersionHash: requestedVersion?.versionHash,
     events: [],
     ownerId,
     createdAt: new Date().toISOString(),
@@ -113,7 +136,7 @@ export async function createExecution(
       ...task,
       status: "decomposing",
     },
-    estimate: estimateTaskCost(description),
+    estimate: estimateTaskCost(description, requestedSpecialist),
   };
 }
 
@@ -130,13 +153,14 @@ export async function createExecution(
  */
 export async function startExecution(
   task: Task,
-  runner: (taskId: string, description: string, spendCap?: number) => Promise<void>
+  runner: (taskId: string, description: string, spendCap?: number, requestedSpecialistId?: string) => Promise<void>
 ): Promise<string> {
   const payload: Record<string, unknown> = {
     taskId: task.id,
     description: task.description,
     spendCap: task.spendCap ?? null,
     walletAddress: task.walletAddress ?? null,
+    requestedSpecialistId: task.requestedSpecialistId ?? null,
   };
 
   // Enqueue is idempotent: returns existing non-failed job if one exists
@@ -158,7 +182,7 @@ export async function startExecution(
   // Run in the background; the job row tracks state durably
   void (async () => {
     try {
-      await runner(task.id, task.description, task.spendCap);
+      await runner(task.id, task.description, task.spendCap, task.requestedSpecialistId);
       await completeJob(job.id, { taskId: task.id });
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Unknown execution failure";
