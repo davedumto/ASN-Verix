@@ -1,4 +1,4 @@
-import type { ExecutionTraceEvent } from "@/types/trace";
+import type { ExecutionTraceEvent, ExecutionReceipt } from "@/types/trace";
 
 export type TaskStatus =
   | "pending"
@@ -17,6 +17,7 @@ export interface Task {
   subtasks?: Subtask[];
   events?: TaskEvent[];
   traceEvents?: ExecutionTraceEvent[];
+  receipt?: ExecutionReceipt;
   spendCap?: number;
   ownerId?: string;
   createdAt: string;

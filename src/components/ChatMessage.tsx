@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { TaskResult } from "@/types/task";
+import { ExecutionReceipt } from "@/types/trace";
 
 const EXPLORER_URL =
     "https://staging-utter-unripe-menkar.explorer.staging-v3.skalenodes.com";
@@ -37,6 +38,7 @@ export interface ChatMessageData {
     status?: "info" | "success" | "error" | "pending";
     specialistName?: string;
     result?: TaskResult;
+    receipt?: ExecutionReceipt;
     thinkingSteps?: ThinkingStep[];
     thinkingDuration?: number;
 }
@@ -158,7 +160,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
 
     // --- Result message: full-width rich card ---
     if (message.role === "result" && message.result) {
-        return <ResultCard result={message.result} />;
+        return <ResultCard result={message.result} receipt={message.receipt} />;
     }
 
     // --- Thinking block: collapsible process steps ---
@@ -312,7 +314,7 @@ function ThinkingBlock({ message }: { message: ChatMessageData }) {
 }
 
 // ---------- Result Card (embedded inline) ----------
-function ResultCard({ result }: { result: TaskResult }) {
+function ResultCard({ result, receipt }: { result: TaskResult; receipt?: ExecutionReceipt }) {
     const [activeTab, setActiveTab] = useState(0);
 
     return (
@@ -460,6 +462,59 @@ function ResultCard({ result }: { result: TaskResult }) {
                             </span>
                         </div>
                     </div>
+
+                    {/* Execution Receipt */}
+                    {receipt && (
+                        <div className="border-t border-border px-5 py-3">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-[10px] text-ink-muted uppercase tracking-wide">
+                                    Execution Receipt
+                                </p>
+                                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium ${
+                                    receipt.status === "proof_ready"
+                                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                        : receipt.status === "verified"
+                                        ? "bg-violet-50 text-violet-700 border border-violet-200"
+                                        : "bg-surface-tertiary text-ink-muted border border-border"
+                                }`}>
+                                    <span className={`w-1 h-1 rounded-full ${
+                                        receipt.status === "proof_ready" ? "bg-emerald-500" :
+                                        receipt.status === "verified" ? "bg-violet-500" : "bg-ink-muted"
+                                    }`} />
+                                    {receipt.status === "proof_ready" ? "Proof Ready" :
+                                     receipt.status === "verified" ? "Verified" : "Pending"}
+                                </span>
+                            </div>
+                            <div className="space-y-1.5 font-mono text-[10px]">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-ink-muted">Receipt Hash</span>
+                                    <span className="text-ink-secondary" title={receipt.receiptHash}>
+                                        {receipt.receiptHash.slice(0, 8)}…{receipt.receiptHash.slice(-8)}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-ink-muted">Trace Root</span>
+                                    <span className="text-ink-secondary" title={receipt.traceRoot}>
+                                        {receipt.traceRoot.slice(0, 8)}…{receipt.traceRoot.slice(-8)}
+                                    </span>
+                                </div>
+                                {receipt.agentVersionHashes.length > 0 && (
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-ink-muted">Agent Versions</span>
+                                        <span className="text-ink-secondary">
+                                            {receipt.agentVersionHashes.length} snapshot{receipt.agentVersionHashes.length !== 1 ? "s" : ""} committed
+                                        </span>
+                                    </div>
+                                )}
+                                <div className="flex items-center justify-between">
+                                    <span className="text-ink-muted">Input Hash</span>
+                                    <span className="text-ink-secondary" title={receipt.taskInputHash}>
+                                        {receipt.taskInputHash.slice(0, 8)}…{receipt.taskInputHash.slice(-8)}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </motion.div>
