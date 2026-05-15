@@ -1,0 +1,44 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git push *)",
+      "Bash(git pull *)",
+      "Bash(mkdir -p \"c:\\\\Users\\\\Ebubechi\\\\Documents\\\\codes\\\\my-projects\\\\boundless-hackathon\\\\agent-specialization-network\\\\src\\\\app\\\\trace\\\\[id]\")",
+      "Bash(git commit -m 'feat: build execution receipt and trace explorer \\(#16\\) *)",
+      "Bash(powershell -Command \"Get-Content src/components/ChatMessage.tsx | Select-Object -First 55\")",
+      "Bash(node -e *)",
+      "Bash(git commit -m 'chore: resolve merge conflicts — combine receipt and taskId fields *)",
+      "Bash(git commit -m ' *)",
+      "Bash(npx prisma *)",
+      "Bash(mkdir -p \"c:\\\\Users\\\\Ebubechi\\\\Documents\\\\codes\\\\my-projects\\\\boundless-hackathon\\\\agent-specialization-network\\\\src\\\\app\\\\api\\\\escrow\\\\[id]\\\\sync\")",
+      "Bash(New-Item -ItemType Directory -Force -Path \"c:\\\\Users\\\\Ebubechi\\\\Documents\\\\codes\\\\my-projects\\\\boundless-hackathon\\\\agent-specialization-network\\\\src\\\\app\\\\api\\\\escrow\\\\[id]\\\\sync\")",
+      "Bash(mkdir -p \"c:\\\\Users\\\\Ebubechi\\\\Documents\\\\codes\\\\my-projects\\\\boundless-hackathon\\\\agent-specialization-network\\\\src\\\\app\\\\api\\\\escrow\\\\[id]\\\\release\" 2>&1)",
+      "PowerShell(Get-Process -Id 6308)",
+      "PowerShell($pgPath = \\(Get-Command psql -ErrorAction SilentlyContinue\\).Source; Write-Host \"psql path: $pgPath\"; $pgPath2 = Get-ChildItem \"C:\\\\Program Files\\\\PostgreSQL\" -Recurse -Filter \"psql.exe\" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName; Write-Host \"Found psql: $pgPath2\")",
+      "Bash(git commit *)",
+      "Bash(mkdir -p \"c:\\\\Users\\\\Ebubechi\\\\Documents\\\\codes\\\\my-projects\\\\boundless-hackathon\\\\agent-specialization-network\\\\src\\\\app\\\\api\\\\proofs\\\\[id]\\\\verify\" 2>&1)",
+      "Bash(mkdir -p \"c:\\\\Users\\\\Ebubechi\\\\Documents\\\\codes\\\\my-projects\\\\boundless-hackathon\\\\agent-specialization-network\\\\src\\\\app\\\\receipts\\\\[id]\" 2>&1)",
+      "Bash(git show *)",
+      "Bash(mkdir -p \"c:\\\\Users\\\\Ebubechi\\\\Documents\\\\codes\\\\my-projects\\\\boundless-hackathon\\\\agent-specialization-network\\\\src\\\\app\\\\api\\\\proofs\\\\[id]\\\\verify\" && echo \"done\")",
+      "Bash(mkdir -p \"c:\\\\Users\\\\Ebubechi\\\\Documents\\\\codes\\\\my-projects\\\\boundless-hackathon\\\\agent-specialization-network\\\\src\\\\app\\\\receipts\\\\[id]\" && echo \"done\")",
+      "WebFetch(domain:dev.api.trustlesswork.com)",
+      "WebFetch(domain:api.trustlesswork.com)",
+      "WebFetch(domain:docs.trustlesswork.com)",
+      "Bash(Get-Item -Path \"src/services/escrow.ts\" -ErrorAction SilentlyContinue)",
+      "Bash(git ls-tree *)",
+      "Bash(mkdir -p \"c:\\\\Users\\\\Ebubechi\\\\Documents\\\\codes\\\\my-projects\\\\boundless-hackathon\\\\agent-specialization-network\\\\src\\\\types\" && mkdir -p \"c:\\\\Users\\\\Ebubechi\\\\Documents\\\\codes\\\\my-projects\\\\boundless-hackathon\\\\agent-specialization-network\\\\src\\\\app\\\\api\\\\escrow\\\\[id]\\\\release\" && echo \"done\")",
+      "Bash(git fetch *)",
+      "Bash(git merge *)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Ebubechi\\\\Documents\\\\codes\\\\my-projects\\\\boundless-hackathon\\\\agent-specialization-network\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(xargs grep -l \"SKALE\\\\|ethers\\\\|blockchain\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\Ebubechi\\Documents\\codes\\my-projects\\boundless-hackathon\\agent-specialization-network\\src\\app\\trace",
+      "c:\\Users\\Ebubechi\\Documents\\codes\\my-projects\\boundless-hackathon\\agent-specialization-network\\src\\app\\api\\escrow\\[id]",
+      "c:\\Users\\Ebubechi\\Documents\\codes\\my-projects\\boundless-hackathon\\agent-specialization-network\\src\\app\\api\\proofs\\[id]",
+      "c:\\Users\\Ebubechi\\Documents\\codes\\my-projects\\boundless-hackathon\\agent-specialization-network\\src\\app\\receipts"
+    ]
+  }
+}
