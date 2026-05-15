@@ -18,9 +18,11 @@
 
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/db";
-import { STELLAR_USDC } from "@/lib/stellar-config";
+import { isStellarPublicKey, STELLAR_USDC } from "@/lib/stellar-config";
 import { ExecutionReceipt } from "@/types/trace";
+import { Subtask } from "@/types/task";
 import { recordTraceEvent } from "@/services/trace";
+import { getSpecialistByName } from "@/services/discovery";
 import {
   EscrowProvider,
   CreateEscrowInput,
@@ -30,7 +32,69 @@ import {
   GetEscrowResult,
   ReleaseMilestoneInput,
   ReleaseMilestoneResult,
+  ReleaseCondition,
 } from "@/types/escrow";
+
+type EscrowMilestonePlan = {
+  subtaskId: string;
+  specialistId: string;
+  specialistName: string;
+  description: string;
+  recipientAddress: string;
+  amount: number;
+  releaseCondition: ReleaseCondition;
+  agentVersionId?: string;
+  agentVersionHash?: string;
+  externalMilestoneId: string;
+};
+
+type PrepareEscrowResult = {
+  escrowId?: string;
+  externalId?: string;
+  status?: string;
+  totalAmount: number;
+  milestoneCount: number;
+  skipped: boolean;
+};
+
+export function releaseConditionForProofPolicy(policy: string | undefined): ReleaseCondition {
+  if (policy === "escrow-eligible") return "proof_verified";
+  if (policy === "receipt-proof") return "receipt_ready";
+  return "manual";
+}
+
+export async function buildEscrowMilestonePlan(
+  subtasks: Subtask[]
+): Promise<EscrowMilestonePlan[]> {
+  const plans: EscrowMilestonePlan[] = [];
+
+  for (const subtask of subtasks) {
+    if (!subtask.specialistName || !subtask.cost || subtask.cost <= 0) continue;
+
+    const specialist = await getSpecialistByName(subtask.specialistName);
+    if (!specialist) {
+      throw new Error(`Cannot create escrow milestone: specialist not found for ${subtask.specialistName}`);
+    }
+    if (!isStellarPublicKey(specialist.walletAddress)) {
+      throw new Error(`Cannot create escrow milestone: ${specialist.name} has an invalid Stellar payout wallet`);
+    }
+
+    plans.push({
+      subtaskId: subtask.id,
+      specialistId: specialist.id,
+      specialistName: specialist.name,
+      description: `${specialist.name}: ${subtask.capability}`,
+      recipientAddress: specialist.walletAddress,
+      amount: subtask.cost,
+      releaseCondition: releaseConditionForProofPolicy(specialist.proofPolicy),
+      agentVersionId: subtask.agentVersionId,
+      agentVersionHash: subtask.versionHash,
+      externalMilestoneId: String(plans.length),
+    });
+  }
+
+  return plans;
+}
 
 // ── Demo adapter ─────────────────────────────────────────────────────────────
 
@@ -486,5 +550,235 @@ export async function syncEscrowStatus(escrowId: string): Promise<{
     const error = err instanceof Error ? err.message : "Unknown sync error";
     console.error(`[Escrow] syncEscrowStatus failed for ${escrowId}:`, error);
     return { escrow, synced: false, error };
+  }
+}
+
+export async function prepareEscrowForExecution(input: {
+  taskId: string;
+  payerAddress?: string;
+  subtasks: Subtask[];
+  spendCap: number;
+}): Promise<PrepareEscrowResult> {
+  const provider = getEscrowProvider();
+  if (!provider) {
+    console.log(`[Escrow] ESCROW_MODE=disabled; skipping escrow preparation for task ${input.taskId}`);
+    return { skipped: true, totalAmount: 0, milestoneCount: 0 };
+  }
+
+  if (!isStellarPublicKey(input.payerAddress)) {
+    throw new Error("Cannot create escrow: connected user wallet is missing or invalid");
+  }
+
+  const existing = await prisma.escrow.findUnique({
+    where: { taskId: input.taskId },
+    include: { milestones: true },
+  });
+  if (existing) {
+    return {
+      escrowId: existing.id,
+      externalId: existing.externalId ?? undefined,
+      status: existing.status,
+      totalAmount: Number(existing.totalAmount),
+      milestoneCount: existing.milestones.length,
+      skipped: false,
+    };
+  }
+
+  const milestonePlan = await buildEscrowMilestonePlan(input.subtasks);
+  const totalAmount = milestonePlan.reduce((sum, milestone) => sum + milestone.amount, 0);
+  if (milestonePlan.length === 0 || totalAmount <= 0) {
+    throw new Error("Cannot create escrow: no payable specialist milestones were produced");
+  }
+  if (totalAmount > input.spendCap) {
+    throw new Error(`Cannot create escrow: total $${totalAmount.toFixed(2)} exceeds spend cap $${input.spendCap.toFixed(2)}`);
+  }
+
+  const escrow = await prisma.escrow.create({
+    data: {
+      taskId: input.taskId,
+      status: "pending",
+      totalAmount,
+      currency: "USDC",
+      payerAddress: input.payerAddress,
+      metadata: { mode: env.ESCROW_MODE, milestoneCount: milestonePlan.length },
+      milestones: {
+        create: milestonePlan.map((milestone) => ({
+          subtaskId: milestone.subtaskId,
+          specialistId: milestone.specialistId,
+          recipientAddress: milestone.recipientAddress,
+          amount: milestone.amount,
+          status: "pending",
+          releaseCondition: milestone.releaseCondition,
+          agentVersionId: milestone.agentVersionId,
+          agentVersionHash: milestone.agentVersionHash,
+          externalMilestoneId: milestone.externalMilestoneId,
+          metadata: {
+            specialistName: milestone.specialistName,
+            description: milestone.description,
+          },
+        })),
+      },
+    },
+  });
+
+  let failurePhase: string = "create";
+  try {
+    const created = await provider.createEscrow({
+      taskId: input.taskId,
+      payerAddress: input.payerAddress,
+      totalAmount,
+      currency: "USDC",
+      milestones: milestonePlan.map((milestone) => ({
+        description: milestone.description,
+        amount: milestone.amount,
+        receiver: milestone.recipientAddress,
+        specialistId: milestone.specialistId,
+      })),
+      metadata: { escrowId: escrow.id, mode: env.ESCROW_MODE },
+    });
+
+    let finalStatus = created.status;
+    let fundTxHash: string | undefined;
+
+    await prisma.escrow.update({
+      where: { id: escrow.id },
+      data: {
+        externalId: created.externalId,
+        status: finalStatus,
+        metadata: {
+          mode: env.ESCROW_MODE,
+          milestoneCount: milestonePlan.length,
+          createTxHash: created.txHash,
+        },
+      },
+    });
+    await recordTraceEvent(
+      input.taskId,
+      "escrow_created",
+      "coordinator",
+      `Trustless Work escrow created for $${totalAmount.toFixed(2)} USDC across ${milestonePlan.length} milestone(s)`,
+      {
+        metadata: {
+          escrowId: escrow.id,
+          externalId: created.externalId,
+          totalAmount,
+          milestoneCount: milestonePlan.length,
+          payerAddress: input.payerAddress,
+          txHash: created.txHash,
+          mode: env.ESCROW_MODE,
+        },
+      }
+    ).catch(() => { /* non-fatal */ });
+
+    if (created.status !== "funded") {
+      try {
+        failurePhase = "fund";
+        const funded = await provider.fundEscrow({
+          escrowId: escrow.id,
+          externalId: created.externalId,
+          amount: totalAmount,
+        });
+        finalStatus = funded.status;
+        fundTxHash = funded.txHash;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown escrow funding error";
+        await prisma.escrow.update({
+          where: { id: escrow.id },
+          data: {
+            status: "pending",
+            metadata: {
+              mode: env.ESCROW_MODE,
+              milestoneCount: milestonePlan.length,
+              createTxHash: created.txHash,
+              fundingError: message,
+            },
+          },
+        });
+        await prisma.escrowMilestone.updateMany({
+          where: { escrowId: escrow.id },
+          data: { status: "failed" },
+        });
+        await recordTraceEvent(
+          input.taskId,
+          "escrow_funding_failed",
+          "coordinator",
+          `Escrow funding failed: ${message}`,
+          { metadata: { escrowId: escrow.id, externalId: created.externalId, error: message } }
+        ).catch(() => { /* non-fatal */ });
+        throw new Error(`Escrow funding failed: ${message}`);
+      }
+    }
+
+    await prisma.escrow.update({
+      where: { id: escrow.id },
+      data: {
+        status: finalStatus,
+        metadata: {
+          mode: env.ESCROW_MODE,
+          milestoneCount: milestonePlan.length,
+          createTxHash: created.txHash,
+          fundTxHash,
+        },
+      },
+    });
+    await prisma.escrowMilestone.updateMany({
+      where: { escrowId: escrow.id },
+      data: { status: finalStatus === "funded" ? "funded" : "pending" },
+    });
+
+    if (finalStatus === "funded") {
+      await recordTraceEvent(
+        input.taskId,
+        "escrow_funded",
+        "coordinator",
+        `Escrow funded for $${totalAmount.toFixed(2)} USDC`,
+        {
+          metadata: {
+            escrowId: escrow.id,
+            externalId: created.externalId,
+            totalAmount,
+            txHash: fundTxHash ?? created.txHash,
+          },
+        }
+      ).catch(() => { /* non-fatal */ });
+    }
+
+    return {
+      escrowId: escrow.id,
+      externalId: created.externalId,
+      status: finalStatus,
+      totalAmount,
+      milestoneCount: milestonePlan.length,
+      skipped: false,
+    };
+  } catch (error) {
+    if (failurePhase === "fund") {
+      throw error;
+    }
+
+    const message = error instanceof Error ? error.message : "Unknown escrow creation error";
+    await prisma.escrow.update({
+      where: { id: escrow.id },
+      data: {
+        status: "pending",
+        metadata: {
+          mode: env.ESCROW_MODE,
+          milestoneCount: milestonePlan.length,
+          creationError: message,
+        },
+      },
+    }).catch(() => { /* non-fatal */ });
+    await prisma.escrowMilestone.updateMany({
+      where: { escrowId: escrow.id },
+      data: { status: "failed" },
+    }).catch(() => { /* non-fatal */ });
+    await recordTraceEvent(
+      input.taskId,
+      "escrow_creation_failed",
+      "coordinator",
+      `Escrow creation failed: ${message}`,
+      { metadata: { escrowId: escrow.id, error: message, mode: env.ESCROW_MODE } }
+    ).catch(() => { /* non-fatal */ });
+    throw error;
   }
 }

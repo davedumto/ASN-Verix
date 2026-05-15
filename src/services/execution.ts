@@ -153,7 +153,7 @@ export async function createExecution(
  */
 export async function startExecution(
   task: Task,
-  runner: (taskId: string, description: string, spendCap?: number, requestedSpecialistId?: string) => Promise<void>
+  runner: (taskId: string, description: string, spendCap?: number, walletAddress?: string, requestedSpecialistId?: string) => Promise<void>
 ): Promise<string> {
   const payload: Record<string, unknown> = {
     taskId: task.id,
@@ -182,7 +182,7 @@ export async function startExecution(
   // Run in the background; the job row tracks state durably
   void (async () => {
     try {
-      await runner(task.id, task.description, task.spendCap, task.requestedSpecialistId);
+      await runner(task.id, task.description, task.spendCap, task.walletAddress, task.requestedSpecialistId);
       await completeJob(job.id, { taskId: task.id });
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Unknown execution failure";

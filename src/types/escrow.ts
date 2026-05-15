@@ -31,7 +31,7 @@ export interface Escrow {
   status: EscrowStatus;
   totalAmount: number;       // USDC, sum of all milestones
   currency: string;          // "USDC"
-  payerAddress: string;      // coordinator wallet
+  payerAddress: string;      // connected user wallet / payer identity
   metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
