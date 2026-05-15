@@ -2,6 +2,7 @@ import type { ExecutionTraceEvent, ExecutionReceipt } from "@/types/trace";
 
 export type TaskStatus =
   | "pending"
+  | "funding_pending"
   | "decomposing"
   | "discovering"
   | "processing"
@@ -24,6 +25,10 @@ export interface Task {
   requestedSpecialistName?: string;
   requestedAgentVersionId?: string;
   requestedAgentVersionHash?: string;
+  approvalStatus?: "pending" | "approved";
+  approvedAt?: string;
+  approvedByWallet?: string;
+  approvalResultHash?: string;
   ownerId?: string;
   createdAt: string;
   completedAt?: string;
@@ -40,6 +45,9 @@ export interface Subtask {
   agentVersionId?: string;
   agentVersion?: number;
   versionHash?: string;
+  parentSubtaskId?: string;
+  delegatedBySpecialistName?: string;
+  delegationDepth?: number;
 }
 
 export interface TaskResult {
@@ -66,6 +74,10 @@ export interface PaymentItem {
   status: "pending" | "confirmed" | "failed";
   agentVersion?: number;
   versionHash?: string;
+  subtaskId?: string;
+  parentSubtaskId?: string;
+  splitRole?: "primary" | "subcontractor";
+  delegatedBySpecialistName?: string;
 }
 
 export interface TaskEvent {

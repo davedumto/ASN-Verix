@@ -14,10 +14,15 @@ model Task {
   totalCost   Decimal?
   spendCap    Decimal?
   events      Json?    @default("[]")
+  walletAddress String?
   requestedSpecialistId      String?
   requestedSpecialistName    String?
   requestedAgentVersionId    String?
   requestedAgentVersionHash  String?
+  approvalStatus     String   @default("pending")
+  approvedAt         DateTime?
+  approvedByWallet   String?
+  approvalResultHash String?
   ownerId     String?
   createdAt   DateTime @default(now())
   completedAt DateTime?
@@ -41,6 +46,9 @@ model Subtask {
   cost           Decimal?
   result         String?
   agentVersionId String?
+  parentSubtaskId String?
+  delegatedBySpecialistName String?
+  delegationDepth Int      @default(0)
   createdAt      DateTime @default(now())
   completedAt    DateTime?
 
@@ -262,13 +270,13 @@ model Job {
  * externalId is the Trustless Work escrow ID (null in demo mode uses DEMO- prefix).
  * Each subtask maps to one EscrowMilestone.
  *
- * EscrowStatus: pending | funded | in_progress | completed | cancelled | disputed
+ * EscrowStatus: pending | funding_pending | funding_failed | funded | in_progress | completed | cancelled | disputed
  */
 model Escrow {
   id             String    @id @default(cuid())
   taskId         String    @unique
   externalId     String?
-  /// EscrowStatus: pending | funded | in_progress | completed | cancelled | disputed
+  /// EscrowStatus: pending | funding_pending | funding_failed | funded | in_progress | completed | cancelled | disputed
   status         String    @default("pending")
   totalAmount    Decimal
   currency       String    @default("USDC")
@@ -304,7 +312,7 @@ model EscrowMilestone {
   amount               Decimal
   /// MilestoneStatus: pending | funded | in_progress | released | refunded | failed
   status               String    @default("pending")
-  /// ReleaseCondition: proof_verified | receipt_ready | manual | auto
+  /// ReleaseCondition: proof_verified | user_approved | proof_and_user_approved | receipt_ready | manual | auto
   releaseCondition     String    @default("auto")
   agentVersionId       String?
   agentVersionHash     String?

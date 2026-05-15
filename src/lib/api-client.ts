@@ -3,7 +3,7 @@ import { AiModelProvider, Specialist, SpecialistProfile } from "@/types/speciali
 import { WalletBalance } from "@/types/payment";
 import { ExecutionTraceEvent, ExecutionReceipt } from "@/types/trace";
 import { ProofRecord } from "@/types/proof";
-import { Escrow, EscrowMilestone } from "@/types/escrow";
+import { Escrow, EscrowMilestone, EscrowSignaturePhase } from "@/types/escrow";
 
 const API_URL = process.env.NEXT_PUBLIC_APP_URL || "";
 
@@ -78,6 +78,21 @@ export async function submitTask(
 
 export async function getTaskStatus(taskId: string): Promise<Task> {
   return request(`/api/tasks/${taskId}`);
+}
+
+export async function approveTaskResult(
+  taskId: string,
+  walletAddress: string
+): Promise<{
+  approvalStatus: "approved";
+  approvedAt: string;
+  approvedByWallet: string;
+  approvalResultHash: string;
+}> {
+  return authedRequest(`/api/tasks/${encodeURIComponent(taskId)}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ walletAddress }),
+  });
 }
 
 export async function getSpecialists(): Promise<Specialist[]> {
@@ -175,4 +190,30 @@ export async function getEscrowByTask(
   taskId: string
 ): Promise<{ escrow: (Escrow & { milestones: EscrowMilestone[] }) | null }> {
   return request(`/api/escrow?taskId=${encodeURIComponent(taskId)}`);
+}
+
+export async function submitSignedEscrowTransaction(
+  escrowId: string,
+  data: { signedXdr: string; phase: EscrowSignaturePhase; signerAddress?: string }
+): Promise<{ escrowId: string; phase: EscrowSignaturePhase; status: string; txHash?: string }> {
+  return authedRequest(`/api/escrow/${encodeURIComponent(escrowId)}/submit-signed`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function syncEscrowStatus(
+  escrowId: string
+): Promise<{ escrowId: string; synced: boolean; status: string | null; milestoneCount: number; error: string | null }> {
+  return authedRequest(`/api/escrow/${encodeURIComponent(escrowId)}/sync`, {
+    method: "POST",
+  });
+}
+
+export async function retryEscrowRelease(
+  escrowId: string
+): Promise<{ released: number; failed: number; skipped: number }> {
+  return authedRequest(`/api/escrow/${encodeURIComponent(escrowId)}/release`, {
+    method: "POST",
+  });
 }

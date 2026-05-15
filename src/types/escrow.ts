@@ -2,6 +2,8 @@
 
 export type EscrowStatus =
   | "pending"      // created locally, not yet on-chain
+  | "funding_pending" // unsigned funding transaction is waiting for payer signature
+  | "funding_failed"  // wallet signing or provider submission failed
   | "funded"       // escrow funded on-chain
   | "in_progress"  // work underway
   | "completed"    // all milestones released
@@ -18,6 +20,8 @@ export type MilestoneStatus =
 
 export type ReleaseCondition =
   | "proof_verified"   // requires ExecutionReceipt.status === "verified"
+  | "user_approved"    // requires task result approval by payer wallet
+  | "proof_and_user_approved" // requires verified proof plus payer approval
   | "receipt_ready"    // requires ExecutionReceipt to exist (proof_ready or verified)
   | "manual"           // coordinator manually triggers release (demo fallback)
   | "auto";            // released immediately after specialist completes (demo mode)
@@ -76,6 +80,8 @@ export interface CreateEscrowResult {
   externalId: string;
   status: EscrowStatus;
   txHash?: string;
+  unsignedTransaction?: string;
+  requiresSignature?: boolean;
 }
 
 export interface FundEscrowInput {
@@ -85,6 +91,17 @@ export interface FundEscrowInput {
 }
 
 export interface FundEscrowResult {
+  status: EscrowStatus;
+  txHash?: string;
+  unsignedTransaction?: string;
+  requiresSignature?: boolean;
+}
+
+export type EscrowSignaturePhase = "create" | "fund";
+
+export interface SubmitSignedEscrowTransactionResult {
+  escrowId: string;
+  phase: EscrowSignaturePhase;
   status: EscrowStatus;
   txHash?: string;
 }
@@ -119,6 +136,9 @@ export interface GetEscrowResult {
 export interface EscrowProvider {
   createEscrow(input: CreateEscrowInput): Promise<CreateEscrowResult>;
   fundEscrow(input: FundEscrowInput): Promise<FundEscrowResult>;
+  submitSignedTransaction?(
+    signedXdr: string
+  ): Promise<{ txHash?: string; hash?: string }>;
   getEscrow(externalId: string): Promise<GetEscrowResult>;
   releaseMilestone(input: ReleaseMilestoneInput): Promise<ReleaseMilestoneResult>;
   cancelEscrow?(externalId: string): Promise<void>;

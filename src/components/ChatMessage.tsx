@@ -7,7 +7,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { TaskResult } from "@/types/task";
 import { ExecutionReceipt } from "@/types/trace";
 import { ProofRecord } from "@/types/proof";
-import { getProofByTask, verifyProof } from "@/lib/api-client";
+import { approveTaskResult, getProofByTask, verifyProof } from "@/lib/api-client";
+import { getAuthorizedWallet } from "@/lib/wallet-connect";
 import EscrowTimeline from "@/components/EscrowTimeline";
 import { stellarTxExplorerUrl } from "@/lib/stellar-config";
 
@@ -42,6 +43,11 @@ export interface ChatMessageData {
     result?: TaskResult;
     taskId?: string;
     receipt?: ExecutionReceipt;
+    walletAddress?: string;
+    approvalStatus?: "pending" | "approved";
+    approvedAt?: string;
+    approvedByWallet?: string;
+    approvalResultHash?: string;
     thinkingSteps?: ThinkingStep[];
     thinkingDuration?: number;
 }
@@ -157,7 +163,18 @@ export default function ChatMessage({ message }: ChatMessageProps) {
 
     // --- Result message: full-width rich card ---
     if (message.role === "result" && message.result) {
-        return <ResultCard result={message.result} taskId={message.taskId} receipt={message.receipt} />;
+        return (
+            <ResultCard
+                result={message.result}
+                taskId={message.taskId}
+                receipt={message.receipt}
+                walletAddress={message.walletAddress}
+                approvalStatus={message.approvalStatus}
+                approvedAt={message.approvedAt}
+                approvedByWallet={message.approvedByWallet}
+                approvalResultHash={message.approvalResultHash}
+            />
+        );
     }
 
     // --- Thinking block: collapsible process steps ---
@@ -307,11 +324,37 @@ function ThinkingBlock({ message }: { message: ChatMessageData }) {
 }
 
 // ---------- Result Card (embedded inline) ----------
-function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: string; receipt?: ExecutionReceipt }) {
+function ResultCard({
+    result,
+    taskId,
+    receipt,
+    walletAddress,
+    approvalStatus,
+    approvedAt,
+    approvedByWallet,
+    approvalResultHash,
+}: {
+    result: TaskResult;
+    taskId?: string;
+    receipt?: ExecutionReceipt;
+    walletAddress?: string;
+    approvalStatus?: "pending" | "approved";
+    approvedAt?: string;
+    approvedByWallet?: string;
+    approvalResultHash?: string;
+}) {
     const [activeTab, setActiveTab] = useState(0);
     const [proof, setProof] = useState<ProofRecord | null>(null);
     const [showTechDetails, setShowTechDetails] = useState(false);
     const [verifying, setVerifying] = useState(false);
+    const [approval, setApproval] = useState({
+        status: approvalStatus ?? "pending",
+        approvedAt,
+        approvedByWallet,
+        approvalResultHash,
+    });
+    const [approving, setApproving] = useState(false);
+    const [approvalError, setApprovalError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!taskId) return;
@@ -333,6 +376,31 @@ function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: 
 
     const isVerified = receipt?.status === "verified" || proof?.status === "verified";
     const canVerify = proof?.status === "proven" && !isVerified;
+    const isApproved = approval.status === "approved";
+
+    const handleApprove = async () => {
+        if (!taskId || approving || isApproved) return;
+        setApproving(true);
+        setApprovalError(null);
+        try {
+            const wallet = await getAuthorizedWallet();
+            if (!wallet) throw new Error("Reconnect your Stellar wallet before approving payout release.");
+            if (walletAddress && wallet.address !== walletAddress) {
+                throw new Error("Connected wallet does not match the task payer wallet.");
+            }
+            const updated = await approveTaskResult(taskId, wallet.address);
+            setApproval({
+                status: updated.approvalStatus,
+                approvedAt: updated.approvedAt,
+                approvedByWallet: updated.approvedByWallet,
+                approvalResultHash: updated.approvalResultHash,
+            });
+        } catch (error) {
+            setApprovalError(error instanceof Error ? error.message : "Approval failed.");
+        } finally {
+            setApproving(false);
+        }
+    };
 
     return (
         <motion.div
@@ -389,6 +457,42 @@ function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: 
                         <p className="text-sm text-ink-secondary">{result.summary}</p>
                     </div>
 
+                    {/* Approval gate */}
+                    <div className="px-5 py-3 border-b border-border bg-surface-secondary/60">
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                                <p className="text-[10px] text-ink-muted uppercase tracking-wide">Payout Approval</p>
+                                <p className="mt-1 text-xs text-ink-secondary">
+                                    {isApproved
+                                        ? `Approved by ${approval.approvedByWallet?.slice(0, 8)}...${approval.approvedByWallet?.slice(-6)}`
+                                        : "Approve the delivered result before escrow milestones can be released."}
+                                </p>
+                                {approval.approvalResultHash && (
+                                    <p className="mt-1 font-mono text-[10px] text-ink-muted">
+                                        result {approval.approvalResultHash.slice(0, 10)}...{approval.approvalResultHash.slice(-8)}
+                                    </p>
+                                )}
+                                {approvalError && (
+                                    <p className="mt-1 text-[10px] text-red-600">{approvalError}</p>
+                                )}
+                            </div>
+                            {isApproved ? (
+                                <span className="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-medium text-emerald-700">
+                                    Approved
+                                </span>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={handleApprove}
+                                    disabled={approving || !taskId}
+                                    className="shrink-0 rounded-md border border-ink bg-ink px-2.5 py-1.5 text-[11px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {approving ? "Approving..." : "Approve payout"}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
                     {/* Deliverable Tabs */}
                     {result.deliverables.length > 0 && (
                         <>
@@ -437,6 +541,11 @@ function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: 
                                         <div className="flex items-center gap-1.5">
                                             <span className={`w-1.5 h-1.5 rounded-full ${p.status === "confirmed" ? "bg-success" : p.status === "failed" ? "bg-error" : "bg-warning"}`} />
                                             <span className="font-medium text-ink">{p.specialist}</span>
+                                            {p.splitRole === "subcontractor" && (
+                                                <span className="rounded border border-border bg-surface px-1.5 py-0.5 text-[9px] text-ink-muted">
+                                                    subcontracted
+                                                </span>
+                                            )}
                                         </div>
                                         <span className="font-mono font-semibold text-ink">${p.amount.toFixed(2)}</span>
                                     </div>
@@ -462,6 +571,12 @@ function ResultCard({ result, taskId, receipt }: { result: TaskResult; taskId?: 
                                             <span className="text-ink-muted">Settlement mode</span>
                                             <span className="text-success">Stellar/Trustless Work intent</span>
                                         </div>
+                                        {p.delegatedBySpecialistName && (
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-ink-muted">Delegated by</span>
+                                                <span className="text-ink-secondary">{p.delegatedBySpecialistName}</span>
+                                            </div>
+                                        )}
                                     </div>
                                 </motion.div>
                             ))}

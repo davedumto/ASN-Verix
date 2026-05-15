@@ -10,13 +10,20 @@ export type TraceEventType =
   | "payment_confirmed"
   | "payment_failed"
   | "specialist_invoked"
+  | "delegation_requested"
+  | "delegation_approved"
+  | "delegation_rejected"
+  | "delegation_executed"
   | "specialist_completed"
   | "specialist_failed"
   | "task_completed"
+  | "result_approved"
   | "task_failed"
   // Escrow lifecycle events
   | "escrow_created"
+  | "escrow_funding_pending"
   | "escrow_funded"
+  | "escrow_signature_submitted"
   | "escrow_creation_failed"
   | "escrow_funding_failed"
   | "escrow_sync_failed"
@@ -51,6 +58,10 @@ export interface PaymentSummaryItem {
   recipientAddress?: string;
   agentVersion?: number;
   versionHash?: string;
+  subtaskId?: string;
+  parentSubtaskId?: string;
+  splitRole?: "primary" | "subcontractor";
+  delegatedBySpecialistName?: string;
 }
 
 export interface ExecutionReceipt {
