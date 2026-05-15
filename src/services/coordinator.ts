@@ -23,6 +23,7 @@ import { appendReputationEvent } from "@/services/reputation";
 import { recordTraceEvent } from "@/services/trace";
 import { generateReceipt } from "@/services/receipt";
 import { buildPinnedSubtask } from "@/services/routing";
+import { prepareEscrowForExecution } from "@/services/escrow";
 import { sha256 } from "@/lib/hash";
 import { decrypt } from "@/lib/encryption";
 import { env } from "@/lib/env";
@@ -531,6 +532,7 @@ export async function executeCoordinator(
   taskId: string,
   description: string,
   spendCap?: number,
+  walletAddress?: string,
   requestedSpecialistId?: string
 ): Promise<void> {
   console.log(`[Coordinator] Starting task ${taskId}: ${description}`);
@@ -543,6 +545,35 @@ export async function executeCoordinator(
   if (!capResult.passed) {
     console.warn(`[Coordinator] Spend cap exceeded: $${capResult.estimatedTotal} > $${capResult.effectiveCap}`);
     return;
+  }
+
+  try {
+    const escrow = await prepareEscrowForExecution({
+      taskId,
+      payerAddress: walletAddress,
+      subtasks,
+      spendCap: effectiveCap,
+    });
+    if (!escrow.skipped) {
+      await pushEvent(
+        taskId,
+        "payment",
+        `Escrow prepared: ${escrow.milestoneCount} milestone(s), $${escrow.totalAmount.toFixed(2)} USDC${escrow.externalId ? ` (${escrow.externalId})` : ""}.`,
+        escrow.status === "funded" ? "success" : "pending"
+      );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown escrow preparation error";
+    await pushEvent(taskId, "system", `Escrow preparation failed: ${message}`, "error");
+    await failExecution(taskId, `Escrow preparation failed: ${message}`);
+    await recordTraceEvent(
+      taskId,
+      "task_failed",
+      "coordinator",
+      `Task failed during escrow preparation: ${message}`,
+      { metadata: { reason: "escrow_preparation_failed", error: message } }
+    ).catch(() => { /* non-fatal */ });
+    throw error;
   }
 
   console.log(`[Coordinator] AI routed to ${subtasks.length} subtask(s)`);
