@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import ChatMessage, { ChatMessageData, ThinkingStep } from "@/components/ChatMessage";
 import ChatSidebar from "@/components/ChatSidebar";
+import ExecutionGraph from "@/components/ExecutionGraph";
 import { Task, TaskStatus, TaskResult, Subtask, TaskEvent } from "@/types/task";
 import { ExecutionTraceEvent } from "@/types/trace";
 import {
@@ -57,6 +58,9 @@ export default function Dashboard() {
   // Confirmation modal
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingDescription, setPendingDescription] = useState("");
+
+  // Graph events for live execution DAG
+  const [graphEvents, setGraphEvents] = useState<ExecutionTraceEvent[]>([]);
 
   // Server event tracking
   const syncedEventsCount = useRef(0);
@@ -274,6 +278,7 @@ export default function Dashboard() {
         if (task.totalCost) setTotalCost(task.totalCost);
         if (task.traceEvents && task.traceEvents.length > 0) {
           syncTraceEvents(task.traceEvents);
+          setGraphEvents(task.traceEvents);
         } else if (task.events) {
           syncEvents(task.events);
         }
@@ -334,6 +339,7 @@ export default function Dashboard() {
     setResult(null);
     setTotalCost(0);
     setElapsedTime(0);
+    setGraphEvents([]);
     syncedEventsCount.current = 0;
 
     // Create thinking block
@@ -751,6 +757,11 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+
+        {/* Live Execution Graph — shown when a task is active */}
+        {taskId && graphEvents.length > 0 && (
+          <ExecutionGraph traceEvents={graphEvents} taskStatus={taskStatus} />
+        )}
 
         {/* Input Bar */}
         <div className="shrink-0 border-t border-border bg-surface">
