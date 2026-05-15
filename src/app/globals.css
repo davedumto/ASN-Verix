@@ -1,60 +1,175 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-ink: #0f172a;
-  --color-ink-secondary: #475569;
-  --color-ink-muted: #94a3b8;
+  --color-ink: #111113;
+  --color-ink-secondary: #4b4d52;
+  --color-ink-muted: #8a8f98;
   --color-surface: #ffffff;
-  --color-surface-secondary: #f8fafc;
-  --color-surface-tertiary: #f1f5f9;
-  --color-border: #e2e8f0;
-  --color-border-strong: #cbd5e1;
-  --color-accent: #0f172a;
-  --color-accent-hover: #1e293b;
-  --color-success: #16a34a;
-  --color-error: #dc2626;
-  --color-warning: #d97706;
+  --color-surface-secondary: #f6f5f2;
+  --color-surface-tertiary: #eceae4;
+  --color-border: #d9d6cc;
+  --color-border-strong: #b9b5aa;
+  --color-accent: #111113;
+  --color-accent-hover: #2a2b2f;
+  --color-success: #16834f;
+  --color-error: #c43b3b;
+  --color-warning: #a66b00;
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   background: var(--color-surface-secondary);
   color: var(--color-ink);
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  letter-spacing: 0;
+  text-rendering: geometricPrecision;
 }
 
-/* Subtle pulse animation for processing states */
-@keyframes pulse-subtle {
+::selection {
+  background: #111113;
+  color: #ffffff;
+}
 
+a,
+button,
+input,
+textarea,
+select {
+  letter-spacing: 0;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Verix visual system: hard-edged infrastructure surfaces */
+.rounded-xl,
+.rounded-2xl {
+  border-radius: 8px;
+}
+
+.shadow-sm,
+.shadow-lg,
+.shadow-2xl {
+  box-shadow: none !important;
+}
+
+.verix-shell {
+  background:
+    linear-gradient(#eceae4 1px, transparent 1px),
+    linear-gradient(90deg, #eceae4 1px, transparent 1px),
+    #f6f5f2;
+  background-size: 24px 24px;
+}
+
+.verix-panel {
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.verix-panel-dark {
+  background: #111113;
+  border: 1px solid #2f3033;
+  border-radius: 8px;
+}
+
+.verix-control {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #ffffff;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.verix-control:hover {
+  border-color: var(--color-border-strong);
+}
+
+.verix-control:active {
+  transform: scale(0.99);
+}
+
+.verix-label {
+  color: var(--color-ink-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.verix-mono {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.verix-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.verix-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.verix-status-success {
+  color: var(--color-success);
+  background: #eef7f1;
+  border-color: #c8e6d2;
+}
+
+.verix-status-warning {
+  color: var(--color-warning);
+  background: #fff7e6;
+  border-color: #ead4a6;
+}
+
+.verix-status-error {
+  color: var(--color-error);
+  background: #fff0f0;
+  border-color: #e8c7c7;
+}
+
+.verix-status-neutral {
+  color: var(--color-ink-secondary);
+  background: #f6f5f2;
+}
+
+@keyframes pulse-subtle {
   0%,
   100% {
     opacity: 1;
   }
 
   50% {
-    opacity: 0.6;
+    opacity: 0.55;
   }
 }
 
 .animate-pulse-subtle {
-  animation: pulse-subtle 2s ease-in-out infinite;
+  animation: pulse-subtle 1.6s ease-in-out infinite;
 }
 
-/* Step number watermark style */
-.step-number {
-  font-size: 4rem;
-  font-weight: 800;
-  color: #f1f5f9;
-  line-height: 1;
-}
-
-/* =============================================
-   Chat Interface Styles
-   ============================================= */
-
-/* Chat message entrance animation */
 @keyframes chat-msg-enter {
   from {
     opacity: 0;
@@ -68,32 +183,30 @@ body {
 }
 
 .chat-msg-enter {
-  animation: chat-msg-enter 0.3s ease-out;
+  animation: chat-msg-enter 0.22s ease-out;
 }
 
-/* Typing indicator dots */
 @keyframes typing-bounce {
-
   0%,
   60%,
   100% {
     transform: translateY(0);
-    opacity: 0.4;
+    opacity: 0.45;
   }
 
   30% {
-    transform: translateY(-4px);
+    transform: translateY(-3px);
     opacity: 1;
   }
 }
 
 .typing-dot {
-  animation: typing-bounce 1.4s ease-in-out infinite;
+  animation: typing-bounce 1.2s ease-in-out infinite;
 }
 
-/* Custom scrollbar for chat areas */
 .chat-scrollbar::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 
 .chat-scrollbar::-webkit-scrollbar-track {
@@ -101,24 +214,22 @@ body {
 }
 
 .chat-scrollbar::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 3px;
+  background: #c4c0b7;
+  border-radius: 999px;
 }
 
 .chat-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #969188;
 }
 
-/* Dark scrollbar for sidebar */
 aside .chat-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 aside .chat-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.26);
 }
 
-/* Thinking block expand animation */
 @keyframes thinking-expand {
   from {
     opacity: 0;
@@ -132,10 +243,9 @@ aside .chat-scrollbar::-webkit-scrollbar-thumb:hover {
 }
 
 .thinking-expand {
-  animation: thinking-expand 0.3s ease-out;
+  animation: thinking-expand 0.22s ease-out;
 }
 
-/* Input bar focus glow */
 .focus-within\:shadow-sm:focus-within {
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  box-shadow: none;
 }

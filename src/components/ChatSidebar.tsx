@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
+import { LoaderCircle, Plug, Unplug } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Task } from "@/types/task";
 import { Specialist } from "@/types/specialist";
 import { stellarAccountExplorerUrl } from "@/lib/stellar-config";
+import VerixMark from "@/components/VerixMark";
+import { WalletProviderId } from "@/lib/wallet-connect";
 
 interface ChatSidebarProps {
     taskHistory: Task[];
@@ -15,7 +17,16 @@ interface ChatSidebarProps {
     onSelectTask: (taskId: string) => void;
     onDeleteTask: (taskId: string) => void;
     walletBalance: number;
+    walletAssetCode: string;
+    nativeBalance: number | null;
+    hasConfiguredAsset: boolean;
     walletAddress: string;
+    walletSource: "connected-wallet" | "coordinator";
+    walletProvider: WalletProviderId | null;
+    walletProviderName: string | null;
+    isWalletConnecting: boolean;
+    onOpenWalletPicker: () => void;
+    onDisconnectWallet: () => void;
     networkStatus: "connected" | "disconnected" | "loading";
     isOpen: boolean;
     onToggle: () => void;
@@ -33,7 +44,16 @@ export default function ChatSidebar({
     onSelectTask,
     onDeleteTask,
     walletBalance,
+    walletAssetCode,
+    nativeBalance,
+    hasConfiguredAsset,
     walletAddress,
+    walletSource,
+    walletProvider,
+    walletProviderName,
+    isWalletConnecting,
+    onOpenWalletPicker,
+    onDisconnectWallet,
     networkStatus,
     isOpen,
     onToggle,
@@ -92,7 +112,7 @@ export default function ChatSidebar({
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={{ duration: 0.15 }}
-                            className="flex flex-col items-center py-4 gap-3 h-full"
+                            className="flex flex-col items-center py-4 gap-3 h-full border-r border-white/10"
                         >
                             {/* Expand button */}
                             <button
@@ -122,7 +142,7 @@ export default function ChatSidebar({
                             <div className="flex flex-col items-center gap-1.5 pb-1">
                                 <span className={`w-2 h-2 rounded-full ${statusColor}`} />
                                 <span className="text-[9px] font-mono text-white/50 leading-none">
-                                    ${walletBalance.toFixed(0)}
+                                    {walletBalance > 0 ? walletBalance.toFixed(0) : nativeBalance?.toFixed(0) ?? "0"}
                                 </span>
                             </div>
                         </motion.div>
@@ -139,10 +159,7 @@ export default function ChatSidebar({
                             {/* Header */}
                             <div className="px-4 pt-5 pb-3 flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <div className="w-7 h-7 rounded-full overflow-hidden bg-white/10 flex items-center justify-center">
-                                        <Image src="/prism-logo.jpg" alt="Prism" width={28} height={28} className="object-cover w-full h-full" />
-                                    </div>
-                                    <span className="text-sm font-bold text-white tracking-tight">PRISM</span>
+                                    <VerixMark inverted />
                                 </div>
                                 <button
                                     onClick={onCollapseToggle}
@@ -164,7 +181,7 @@ export default function ChatSidebar({
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                                     </svg>
-                                    New Task
+                                    New execution
                                 </button>
                             </div>
 
@@ -178,7 +195,7 @@ export default function ChatSidebar({
                                 ) : (
                                     <>
                                         <p className="text-[10px] text-white/30 uppercase tracking-wider px-3 pt-3 pb-1.5">
-                                            History
+                                            Executions
                                         </p>
                                         {taskHistory.map((task) => (
                                             <div key={task.id} className="relative group">
@@ -228,7 +245,7 @@ export default function ChatSidebar({
                             {/* Specialists */}
                             <div className="border-t border-white/10 px-3 py-3">
                                 <div className="flex items-center justify-between px-1 mb-2">
-                                    <p className="text-[10px] text-white/30 uppercase tracking-wider">Specialists ({specialists.length})</p>
+                                    <p className="text-[10px] text-white/30 uppercase tracking-wider">Agents ({specialists.length})</p>
                                     <Link href="/settings" className="text-[10px] text-white/30 hover:text-white/60 transition-colors">Manage</Link>
                                 </div>
                                 <div className="space-y-1">
@@ -247,11 +264,22 @@ export default function ChatSidebar({
                                 <div className="rounded-xl bg-white/[0.06] border border-white/10 overflow-hidden">
                                     {/* Balance */}
                                     <div className="px-4 pt-3.5 pb-3">
-                                        <p className="text-[10px] text-white/30 uppercase tracking-wider mb-1">Coordinator Wallet</p>
-                                        <p className="text-2xl font-bold font-mono text-white leading-tight">
-                                            ${networkStatus === "loading" ? "..." : walletBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            <span className="text-xs font-medium text-white/40 ml-1">USDC</span>
+                                        <p className="text-[10px] text-white/30 uppercase tracking-wider mb-1">
+                                            {walletSource === "connected-wallet" ? "Connected wallet" : "Settlement account"}
                                         </p>
+                                        <p className="text-2xl font-bold font-mono text-white leading-tight">
+                                            {networkStatus === "loading"
+                                                ? "..."
+                                                : (walletBalance > 0 ? walletBalance : nativeBalance ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            <span className="text-xs font-medium text-white/40 ml-1">
+                                                {walletBalance > 0 ? walletAssetCode : "XLM"}
+                                            </span>
+                                        </p>
+                                        {!hasConfiguredAsset && nativeBalance !== null && (
+                                            <p className="mt-1 text-[10px] text-amber-300/80">
+                                                No configured {walletAssetCode} trustline or balance; showing XLM.
+                                            </p>
+                                        )}
                                     </div>
                                     {/* Details */}
                                     <div className="border-t border-white/8 px-4 py-2.5 space-y-2">
@@ -269,13 +297,39 @@ export default function ChatSidebar({
                                             </div>
                                         </div>
                                         <div className="flex items-center justify-between">
-                                            <span className="text-[10px] text-white/30">Gas Fees</span>
-                                            <span className="text-[10px] font-medium text-emerald-400">Low-fee Soroban</span>
+                                            <span className="text-[10px] text-white/30">Runtime</span>
+                                            <span className="text-[10px] font-medium text-emerald-400">Stellar/Soroban</span>
                                         </div>
                                         <div className="flex items-center justify-between">
                                             <span className="text-[10px] text-white/30">Protocol</span>
-                                            <span className="text-[10px] text-white/50">Trustless Work</span>
+                                            <span className="text-[10px] text-white/50">
+                                                {walletProviderName ?? (walletProvider ? walletProvider : "Trustless Work")}
+                                            </span>
                                         </div>
+                                    </div>
+                                    <div className="border-t border-white/8 px-4 py-2">
+                                        {walletSource === "connected-wallet" ? (
+                                            <button
+                                                onClick={onDisconnectWallet}
+                                                className="flex w-full items-center justify-center gap-1.5 border border-white/10 px-2 py-1.5 text-[10px] text-white/50 transition-colors hover:border-white/20 hover:text-white/80"
+                                            >
+                                                <Unplug className="h-3 w-3" aria-hidden="true" />
+                                                Disconnect wallet
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={onOpenWalletPicker}
+                                                disabled={isWalletConnecting}
+                                                className="flex w-full items-center justify-center gap-1.5 border border-white/10 px-2 py-1.5 text-[10px] text-white/50 transition-colors hover:border-white/20 hover:text-white/80 disabled:opacity-50"
+                                            >
+                                                {isWalletConnecting ? (
+                                                    <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                                ) : (
+                                                    <Plug className="h-3 w-3" aria-hidden="true" />
+                                                )}
+                                                Connect Freighter
+                                            </button>
+                                        )}
                                     </div>
                                     {/* Explorer link */}
                                     {walletAddress && walletAddress !== "Not configured" && (
@@ -307,12 +361,7 @@ export default function ChatSidebar({
             >
                 {/* Mobile header */}
                 <div className="px-4 pt-5 pb-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full overflow-hidden bg-white/10 flex items-center justify-center">
-                            <Image src="/prism-logo.jpg" alt="Prism" width={28} height={28} className="object-cover w-full h-full" />
-                        </div>
-                        <span className="text-sm font-bold text-white tracking-tight">PRISM</span>
-                    </div>
+                    <VerixMark inverted />
                     <button
                         onClick={onToggle}
                         className="w-7 h-7 rounded-lg flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
@@ -332,7 +381,7 @@ export default function ChatSidebar({
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                         </svg>
-                        New Task
+                        New execution
                     </button>
                 </div>
 
@@ -345,7 +394,7 @@ export default function ChatSidebar({
                         </div>
                     ) : (
                         <>
-                            <p className="text-[10px] text-white/30 uppercase tracking-wider px-3 pt-3 pb-1.5">History</p>
+                            <p className="text-[10px] text-white/30 uppercase tracking-wider px-3 pt-3 pb-1.5">Executions</p>
                             {taskHistory.map((task) => (
                                 <button
                                     key={task.id}
@@ -370,16 +419,38 @@ export default function ChatSidebar({
 
                 {/* Mobile wallet footer */}
                 <div className="border-t border-white/10 px-4 py-3">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full ${statusColor}`} />
-                            <span className="text-xs text-white/50">
-                                {networkStatus === "connected" ? "Stellar Testnet" : networkStatus === "loading" ? "Connecting..." : "Disconnected"}
-                            </span>
-                        </div>
-                        <span className="text-xs font-mono font-semibold text-white/80">${walletBalance.toFixed(2)}</span>
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${statusColor}`} />
+                        <span className="text-xs text-white/50">
+                            {walletSource === "connected-wallet"
+                                ? "Freighter wallet"
+                                : networkStatus === "connected"
+                                    ? "Coordinator wallet"
+                                    : networkStatus === "loading"
+                                        ? "Connecting..."
+                                        : "Disconnected"}
+                        </span>
                     </div>
+                        <span className="text-xs font-mono font-semibold text-white/80">
+                            {walletBalance > 0 ? walletBalance.toFixed(2) : nativeBalance?.toFixed(2) ?? "0.00"} {walletBalance > 0 ? walletAssetCode : "XLM"}
+                        </span>
                 </div>
+                <button
+                    onClick={walletSource === "connected-wallet" ? onDisconnectWallet : onOpenWalletPicker}
+                    disabled={isWalletConnecting}
+                    className="mt-3 flex w-full items-center justify-center gap-1.5 border border-white/10 px-2 py-1.5 text-[10px] text-white/50 transition-colors hover:border-white/20 hover:text-white/80 disabled:opacity-50"
+                >
+                    {isWalletConnecting ? (
+                        <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                    ) : walletSource === "connected-wallet" ? (
+                        <Unplug className="h-3 w-3" aria-hidden="true" />
+                    ) : (
+                        <Plug className="h-3 w-3" aria-hidden="true" />
+                    )}
+                    {walletSource === "connected-wallet" ? "Disconnect wallet" : "Connect Freighter"}
+                </button>
+            </div>
             </aside>
 
             {/* Delete Confirmation Dialog */}

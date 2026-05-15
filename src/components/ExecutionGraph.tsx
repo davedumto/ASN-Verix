@@ -37,11 +37,11 @@ const statusLabel: Record<NodeStatus, string> = {
 };
 
 const typeIcon: Record<GraphNode["type"], string> = {
-  coordinator: "◈",
-  specialist:  "◉",
-  receipt:     "◇",
-  proof:       "◎",
-  escrow:      "◆",
+  coordinator: "C",
+  specialist:  "A",
+  receipt:     "R",
+  proof:       "P",
+  escrow:      "E",
 };
 
 function deriveNodes(events: ExecutionTraceEvent[], taskStatus?: string | null): GraphNode[][] {
@@ -132,12 +132,14 @@ function Node({ node }: { node: GraphNode }) {
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.25 }}
-      className={`relative flex items-start gap-2 px-3 py-2.5 rounded-xl border bg-surface ${s.border} min-w-[112px] max-w-[148px]`}
+      className={`relative flex items-start gap-2 px-3 py-2.5 rounded-md border bg-surface ${s.border} min-w-[112px] max-w-[148px]`}
     >
       <span className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${s.dot}`} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1 mb-0.5">
-          <span className="text-[10px] text-ink-muted">{typeIcon[node.type]}</span>
+          <span className="grid h-4 w-4 place-items-center border border-border bg-surface-secondary font-mono text-[8px] font-semibold text-ink-muted">
+            {typeIcon[node.type]}
+          </span>
           <span className="text-xs font-medium text-ink truncate">{node.label}</span>
         </div>
         <span className={`text-[9px] font-mono ${s.badge}`}>{statusLabel[node.status]}</span>
@@ -170,8 +172,8 @@ export default function ExecutionGraph({ traceEvents, taskStatus }: ExecutionGra
   return (
     <div className="shrink-0 border-t border-border bg-surface-secondary/60 px-4 py-3">
       <div className="max-w-3xl mx-auto">
-        <p className="text-[9px] font-mono text-ink-muted uppercase tracking-widest mb-2.5">
-          Execution Graph
+        <p className="verix-label mb-2.5">
+          Execution DAG
         </p>
         <div className="flex items-start gap-1 overflow-x-auto pb-1">
           <AnimatePresence initial={false}>

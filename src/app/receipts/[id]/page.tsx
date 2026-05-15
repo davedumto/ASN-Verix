@@ -217,7 +217,7 @@ export default function ReceiptExplorerPage({
           animate={{ opacity: 1, y: 0 }}
           className="bg-surface border border-border rounded-2xl overflow-hidden"
         >
-          <div className="px-5 py-3 border-b border-border flex items-center justify-between bg-gradient-to-r from-violet-50 to-indigo-50">
+          <div className="px-5 py-3 border-b border-border flex items-center justify-between bg-surface-secondary">
             <span className="text-xs font-semibold text-violet-700">Execution Receipt</span>
             <ProofStatusBadge status={receipt.status} />
           </div>
@@ -396,7 +396,7 @@ export default function ReceiptExplorerPage({
         {/* Disclaimer */}
         <p className="text-[10px] text-ink-muted text-center px-4">
           This receipt proves workflow integrity — which agents ran, at which version, at what
-          cost, and with what payments confirmed on-chain. It does not prove the correctness of
+          cost, and with what payment intents were committed. It does not prove the correctness of
           LLM-generated content.
         </p>
       </div>

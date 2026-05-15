@@ -2,11 +2,11 @@
 
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { motion } from "framer-motion";
 import { SpecialistProfile, ProofPolicy, AgentVersion } from "@/types/specialist";
 import { getSpecialistProfile } from "@/lib/api-client";
 import { stellarAccountExplorerUrl } from "@/lib/stellar-config";
+import VerixMark from "@/components/VerixMark";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -147,10 +147,7 @@ export default function AgentProfilePage({
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Link href="/dashboard" className="flex items-center gap-2 group">
-              <div className="w-8 h-8 rounded-full overflow-hidden bg-white/10">
-                <Image src="/prism-logo.jpg" alt="Prism" width={32} height={32} className="object-cover w-full h-full" />
-              </div>
-              <span className="text-sm font-bold tracking-tight group-hover:text-white/80 transition-colors">PRISM</span>
+              <VerixMark inverted />
             </Link>
             <span className="text-white/20 text-sm">/</span>
             <Link href="/marketplace" className="text-sm text-white/60 hover:text-white/80 transition-colors">

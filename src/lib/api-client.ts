@@ -128,8 +128,9 @@ export async function deleteSpecialist(id: string): Promise<void> {
   });
 }
 
-export async function getWalletBalance(): Promise<WalletBalance> {
-  return request("/api/wallet/balance");
+export async function getWalletBalance(address?: string): Promise<WalletBalance> {
+  const query = address ? `?address=${encodeURIComponent(address)}` : "";
+  return request(`/api/wallet/balance${query}`);
 }
 
 export async function getTaskHistory(): Promise<Task[]> {

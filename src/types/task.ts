@@ -19,6 +19,7 @@ export interface Task {
   traceEvents?: ExecutionTraceEvent[];
   receipt?: ExecutionReceipt;
   spendCap?: number;
+  walletAddress?: string;
   ownerId?: string;
   createdAt: string;
   completedAt?: string;
@@ -73,6 +74,8 @@ export interface TaskEvent {
 export interface CreateTaskRequest {
   description: string;
   spendCap?: number;
+  walletAddress: string;
+  walletProvider?: string;
 }
 
 export interface CreateTaskResponse {

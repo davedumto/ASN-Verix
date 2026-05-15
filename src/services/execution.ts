@@ -99,6 +99,7 @@ export async function createExecution(
     description,
     status: "pending",
     spendCap: request.spendCap ?? DEFAULT_SPEND_CAP,
+    walletAddress: request.walletAddress,
     events: [],
     ownerId,
     createdAt: new Date().toISOString(),
@@ -135,6 +136,7 @@ export async function startExecution(
     taskId: task.id,
     description: task.description,
     spendCap: task.spendCap ?? null,
+    walletAddress: task.walletAddress ?? null,
   };
 
   // Enqueue is idempotent: returns existing non-failed job if one exists
