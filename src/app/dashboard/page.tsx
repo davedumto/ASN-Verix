@@ -29,6 +29,7 @@ import {
 } from "@/lib/wallet-connect";
 import { DEMO_GOLDEN_PROMPT, DEMO_SPEND_CAP_USDC } from "@/lib/demo-scenario";
 import { WalletBalance } from "@/types/payment";
+import { toast } from "sonner";
 
 // Pure helper — defined outside component so it is stable across renders
 function traceEventToThinkingStep(e: ExecutionTraceEvent): ThinkingStep {
@@ -552,7 +553,7 @@ export default function Dashboard() {
     if (!files) return;
     Array.from(files).forEach((file) => {
       if (file.size > 500_000) {
-        alert(`"${file.name}" is too large (max 500 KB).`);
+        toast.error(`"${file.name}" is too large (max 500 KB).`);
         return;
       }
       const reader = new FileReader();
@@ -639,6 +640,7 @@ export default function Dashboard() {
       setTaskId(response.task_id);
       setTaskStatus("decomposing");
       setEstimatedCost(response.estimated_cost);
+      toast.success("Task submitted — execution started.");
       // Stamp the taskId onto the thinking message so EscrowTimeline can load it
       setMessages((prev) => {
         const updated = [...prev];
@@ -665,12 +667,14 @@ export default function Dashboard() {
         });
       });
     } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
       addThinkingStep({
-        message: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+        message: `Error: ${msg}`,
         status: "error",
         type: "system",
         timestamp: new Date().toISOString(),
       });
+      toast.error(`Task submission failed: ${msg}`);
       setTaskStatus("failed");
     } finally {
       setIsSubmitting(false);

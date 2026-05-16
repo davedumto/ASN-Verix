@@ -7,6 +7,7 @@ import { getAuthorizedWallet, signWalletTransaction } from "@/lib/wallet-connect
 import { stellarTxExplorerUrl } from "@/lib/stellar-config";
 import { isDemoEscrowId, trustlessWorkEscrowViewerUrl } from "@/lib/trustless-work";
 import { Escrow, EscrowMilestone, EscrowSignaturePhase } from "@/types/escrow";
+import { toast } from "sonner";
 
 interface EscrowTimelineProps {
   taskId: string;
@@ -245,9 +246,12 @@ export default function EscrowTimeline({ taskId }: EscrowTimelineProps) {
       });
       await loadEscrow(false);
       setSigningState("idle");
+      toast.success(signaturePhase === "fund" ? "Escrow funded — agents are executing." : "Deploy transaction signed.");
     } catch (error) {
+      const msg = error instanceof Error ? error.message : "Wallet signing failed.";
       setSigningState("failed");
-      setSigningError(error instanceof Error ? error.message : "Wallet signing failed.");
+      setSigningError(msg);
+      toast.error(msg);
     }
   }
 
@@ -262,12 +266,12 @@ export default function EscrowTimeline({ taskId }: EscrowTimelineProps) {
         error: result.error ?? undefined,
       });
       await loadEscrow(false);
+      if (result.synced) toast.success("Escrow status synced.");
+      else if (result.error) toast.error(`Sync error: ${result.error}`);
     } catch (error) {
-      setSyncStatus({
-        at: new Date().toISOString(),
-        synced: false,
-        error: error instanceof Error ? error.message : "Escrow sync failed.",
-      });
+      const msg = error instanceof Error ? error.message : "Escrow sync failed.";
+      setSyncStatus({ at: new Date().toISOString(), synced: false, error: msg });
+      toast.error(msg);
     } finally {
       setSyncing(false);
     }
@@ -280,12 +284,11 @@ export default function EscrowTimeline({ taskId }: EscrowTimelineProps) {
       await retryEscrowRelease(escrow.id);
       await loadEscrow(false);
       setSyncStatus({ at: new Date().toISOString(), synced: true });
+      toast.success("Milestone release triggered.");
     } catch (error) {
-      setSyncStatus({
-        at: new Date().toISOString(),
-        synced: false,
-        error: error instanceof Error ? error.message : "Release retry failed.",
-      });
+      const msg = error instanceof Error ? error.message : "Release retry failed.";
+      setSyncStatus({ at: new Date().toISOString(), synced: false, error: msg });
+      toast.error(msg);
     } finally {
       setRetryingRelease(false);
     }

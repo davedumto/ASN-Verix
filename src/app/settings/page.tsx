@@ -13,6 +13,7 @@ import {
   getCurrentSession,
 } from "@/lib/api-client";
 import VerixMark from "@/components/VerixMark";
+import { toast } from "sonner";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -68,7 +69,6 @@ export default function SettingsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(getCurrentSession);
 
   // Form state
@@ -111,7 +111,6 @@ export default function SettingsPage() {
     setAiModel("openai");
     setProofPolicy("trace-only");
     setApiKey("");
-    setMessage(null);
     setShowForm(true);
   }
 
@@ -125,7 +124,6 @@ export default function SettingsPage() {
     setAiModel(s.aiModel ?? "openai");
     setProofPolicy(s.proofPolicy ?? "trace-only");
     setApiKey("");
-    setMessage(null);
     setShowForm(true);
     // Scroll form into view on mobile
     setTimeout(() => {
@@ -136,24 +134,22 @@ export default function SettingsPage() {
   function closeForm() {
     setShowForm(false);
     setEditingId(null);
-    setMessage(null);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
-    setMessage(null);
 
     // Client-side validation
     const parsedPrice = parseFloat(priceUsdc);
     if (isNaN(parsedPrice) || parsedPrice < 0) {
-      setMessage({ text: "Price must be a non-negative number", type: "error" });
+      toast.error("Price must be a non-negative number");
       setSubmitting(false);
       return;
     }
     const trimmedWallet = walletAddress.trim();
     if (trimmedWallet && !/^G[A-Z2-7]{55}$/.test(trimmedWallet)) {
-      setMessage({ text: "Wallet address must be a Stellar public key starting with G", type: "error" });
+      toast.error("Wallet address must be a Stellar public key starting with G");
       setSubmitting(false);
       return;
     }
@@ -169,7 +165,7 @@ export default function SettingsPage() {
           proofPolicy,
           apiKey: apiKey || undefined,
         });
-        setMessage({ text: `${name} updated successfully!`, type: "success" });
+        toast.success(`${name} updated successfully!`);
       } else {
         await registerSpecialist({
           name,
@@ -181,14 +177,14 @@ export default function SettingsPage() {
           proofPolicy,
           apiKey: apiKey || undefined,
         });
-        setMessage({ text: `${name} published to marketplace!`, type: "success" });
+        toast.success(`${name} published to marketplace!`);
       }
 
       closeForm();
       fetchSpecialists();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unexpected error";
-      setMessage({ text: msg, type: "error" });
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -198,12 +194,12 @@ export default function SettingsPage() {
     if (!confirm(`Remove ${specialistName} from the marketplace?`)) return;
     try {
       await deleteSpecialist(id);
-      setMessage({ text: `${specialistName} removed`, type: "success" });
+      toast.success(`${specialistName} removed from marketplace.`);
       if (editingId === id) closeForm();
       fetchSpecialists();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to remove specialist";
-      setMessage({ text: msg, type: "error" });
+      toast.error(msg);
     }
   }
 
@@ -251,29 +247,6 @@ export default function SettingsPage() {
             changing price, wallet, capabilities, or proof policy creates a new immutable version snapshot.
           </p>
         </div>
-
-        {/* Global status message */}
-        <AnimatePresence>
-          {message && !showForm && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              className={`mb-6 px-4 py-3 rounded-xl text-sm border flex items-start justify-between gap-3 ${
-                message.type === "success"
-                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                  : "bg-red-500/10 border-red-500/30 text-red-400"
-              }`}
-            >
-              <span>{message.text}</span>
-              <button onClick={() => setMessage(null)} className="shrink-0 opacity-60 hover:opacity-100">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* Agent List */}
         <div className="mb-8">
@@ -434,29 +407,6 @@ export default function SettingsPage() {
                     </span>
                   )}
                 </div>
-
-                {/* Inline error/success */}
-                <AnimatePresence>
-                  {message && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className={`mb-4 px-4 py-3 rounded-xl text-sm border flex items-start justify-between gap-3 ${
-                        message.type === "success"
-                          ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                          : "bg-red-500/10 border-red-500/30 text-red-400"
-                      }`}
-                    >
-                      <span>{message.text}</span>
-                      <button onClick={() => setMessage(null)} className="shrink-0 opacity-60 hover:opacity-100">
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

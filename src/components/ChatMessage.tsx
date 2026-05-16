@@ -8,6 +8,7 @@ import { TaskResult } from "@/types/task";
 import { ExecutionReceipt } from "@/types/trace";
 import { ProofRecord } from "@/types/proof";
 import { approveTaskResult, getProofByTask, verifyProof } from "@/lib/api-client";
+import { toast } from "sonner";
 import { getAuthorizedWallet } from "@/lib/wallet-connect";
 import EscrowTimeline from "@/components/EscrowTimeline";
 import { stellarTxExplorerUrl } from "@/lib/stellar-config";
@@ -410,6 +411,7 @@ function ResultCard({
         a.download = `verix-report-${taskId ? taskId.slice(0, 8) : Date.now()}.md`;
         a.click();
         URL.revokeObjectURL(url);
+        toast.success("Report downloaded.");
     };
 
     const handleApprove = async () => {
@@ -429,8 +431,11 @@ function ResultCard({
                 approvedByWallet: updated.approvedByWallet,
                 approvalResultHash: updated.approvalResultHash,
             });
+            toast.success("Payout approved — releasing escrow milestones.");
         } catch (error) {
-            setApprovalError(error instanceof Error ? error.message : "Approval failed.");
+            const msg = error instanceof Error ? error.message : "Approval failed.";
+            setApprovalError(msg);
+            toast.error(msg);
         } finally {
             setApproving(false);
         }
