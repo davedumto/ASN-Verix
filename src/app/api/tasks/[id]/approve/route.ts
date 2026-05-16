@@ -91,7 +91,7 @@ export async function POST(
 
   const receipt = await getReceipt(task.id).catch(() => null);
   if (receipt) {
-    await releaseEscrowMilestones(task.id, receipt).catch(() => { /* non-fatal */ });
+    await releaseEscrowMilestones(task.id, receipt, { allowManual: true }).catch(() => { /* non-fatal */ });
   }
 
   return NextResponse.json({
