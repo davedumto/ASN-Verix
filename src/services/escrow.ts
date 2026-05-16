@@ -143,9 +143,9 @@ function evaluateMilestoneReleaseEligibility(input: {
     const expectedAmount = Number(milestone.amount);
     const payment = receipt.paymentSummary.find((p) =>
       (milestone.agentVersionHash && p.versionHash === milestone.agentVersionHash) ||
-      (p.recipientAddress && p.recipientAddress === milestone.recipientAddress) ||
-      p.specialist === specialistName ||
-      p.specialist === milestone.specialistId
+      (specialistName && p.specialist === specialistName) ||
+      p.specialist === milestone.specialistId ||
+      (p.recipientAddress && p.recipientAddress === milestone.recipientAddress)
     );
 
     if (!payment) {
@@ -229,10 +229,13 @@ class TrustlessWorkAdapter implements EscrowProvider {
     body?: unknown,
     timeoutMs = 30_000
   ): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    console.log(`[TrustlessWork] ${method} ${url}`);
+    if (body) console.log(`[TrustlessWork] body:`, JSON.stringify(body));
     try {
-      const res = await fetch(`${this.baseUrl}${path}`, {
+      const res = await fetch(url, {
         method,
         headers: {
           "Content-Type": "application/json",
@@ -240,38 +243,61 @@ class TrustlessWorkAdapter implements EscrowProvider {
         },
         body: body != null ? JSON.stringify(body) : undefined,
         signal: controller.signal,
+        // Disable Next.js extended fetch cache for external API calls
+        cache: "no-store",
       });
 
       if (!res.ok) {
         let errMsg = `Trustless Work API error ${res.status}`;
         try {
           const json = await res.json();
+          console.error(`[TrustlessWork] ${res.status} response:`, json);
           errMsg = json.message ?? json.error ?? errMsg;
         } catch { /* ignore parse failure */ }
         throw new Error(errMsg);
       }
 
-      return res.json() as Promise<T>;
+      const json = await res.json();
+      console.log(`[TrustlessWork] ${res.status} response:`, JSON.stringify(json));
+      return json as T;
+    } catch (err) {
+      const cause = (err as { cause?: Error }).cause;
+      console.error(
+        `[TrustlessWork] request failed: ${(err as Error).message}`,
+        cause ? `| cause: ${cause.message} (${cause.constructor?.name})` : ""
+      );
+      throw err;
     } finally {
       clearTimeout(timer);
     }
   }
 
-  private async sendTransaction(unsignedTransaction: string): Promise<string | undefined> {
+  private async signAndSend(unsignedXdr: string): Promise<string | undefined> {
+    const privateKey = env.COORDINATOR_STELLAR_PRIVATE_KEY;
+    if (!privateKey) {
+      console.warn("[TrustlessWork] COORDINATOR_STELLAR_PRIVATE_KEY not set — cannot sign XDR server-side");
+      return undefined;
+    }
     try {
-      const result = await this.submitSignedTransaction(unsignedTransaction);
+      const { signStellarXdr } = await import("@/lib/stellar-config");
+      const signedXdr = await signStellarXdr(unsignedXdr, privateKey);
+      const result = await this.submitSignedTransaction(signedXdr);
       return result.txHash ?? result.hash;
     } catch (err) {
-      console.warn("[TrustlessWork] send-transaction failed:", err);
+      console.warn("[TrustlessWork] sign-and-send failed:", err);
       return undefined;
     }
   }
 
-  async submitSignedTransaction(signedXdr: string): Promise<{ txHash?: string; hash?: string }> {
-    return this.request<{ txHash?: string; hash?: string }>(
+  private async sendTransaction(unsignedTransaction: string): Promise<string | undefined> {
+    return this.signAndSend(unsignedTransaction);
+  }
+
+  async submitSignedTransaction(signedXdr: string): Promise<{ txHash?: string; hash?: string; contractId?: string; escrowId?: string }> {
+    return this.request<{ txHash?: string; hash?: string; contractId?: string; escrowId?: string }>(
       "POST",
       "/helper/send-transaction",
-      { signedXdr, unsignedTransaction: signedXdr }
+      { signedXdr }
     );
   }
 
@@ -285,12 +311,15 @@ class TrustlessWorkAdapter implements EscrowProvider {
           receiver: input.payerAddress,
         }];
 
-    const data = await this.request<{ unsignedTransaction?: string; id?: string; status?: string }>(
+    // TW schema: no top-level amount; platformFee and milestone amounts are numbers (not strings)
+    // engagementId must not contain hyphens
+    const engagementId = input.taskId.replace(/-/g, "").slice(0, 32);
+    const data = await this.request<{ unsignedTransaction?: string; contractId?: string; id?: string; status?: string }>(
       "POST",
       `/deployer/${type}`,
       {
         signer: this.signerAddress,
-        engagementId: input.taskId,
+        engagementId,
         title: `Task ${input.taskId.slice(0, 8)}`,
         description: `Verix proof-gated multi-agent execution escrow`,
         roles: {
@@ -300,7 +329,6 @@ class TrustlessWorkAdapter implements EscrowProvider {
           releaseSigner: this.signerAddress,
           disputeResolver: input.payerAddress,
         },
-        amount: input.totalAmount,
         platformFee: 0,
         trustline: {
           symbol: input.currency ?? STELLAR_USDC.code,
@@ -308,17 +336,20 @@ class TrustlessWorkAdapter implements EscrowProvider {
         },
         milestones: milestones.map((m) => ({
           description: m.description,
-          amount: String(m.amount),
+          amount: m.amount,
           receiver: m.receiver,
         })),
       }
     );
 
+    const externalId = data.contractId ?? data.id ?? `TW-ESC-${input.taskId.slice(0, 8)}`;
+    console.log(`[TrustlessWork] deployer response: contractId=${data.contractId} id=${data.id} status=${data.status}`);
+
     let txHash: string | undefined;
     if (data.unsignedTransaction) {
       if (this.signingMode === "wallet") {
         return {
-          externalId: data.id ?? `TW-ESC-${input.taskId.slice(0, 8)}`,
+          externalId,
           status: "pending",
           unsignedTransaction: data.unsignedTransaction,
           requiresSignature: true,
@@ -328,7 +359,7 @@ class TrustlessWorkAdapter implements EscrowProvider {
     }
 
     return {
-      externalId: data.id ?? `TW-ESC-${input.taskId.slice(0, 8)}`,
+      externalId,
       status: (data.status as CreateEscrowResult["status"]) ?? "pending",
       txHash,
     };
@@ -338,7 +369,7 @@ class TrustlessWorkAdapter implements EscrowProvider {
     const data = await this.request<{ unsignedTransaction?: string; status?: string }>(
       "POST",
       `/escrow/${env.TRUSTLESS_WORK_ESCROW_TYPE}/fund-escrow`,
-      { contractId: input.externalId, amount: String(input.amount), signer: this.signerAddress }
+      { contractId: input.externalId, amount: input.amount, signer: this.signerAddress }
     );
 
     let txHash: string | undefined;
@@ -367,20 +398,52 @@ class TrustlessWorkAdapter implements EscrowProvider {
     const type = env.TRUSTLESS_WORK_ESCROW_TYPE;
     const contractId = input.escrowId;
     const releaseSigner = input.releaseSigner ?? this.signerAddress;
-    const milestoneIndex = input.externalMilestoneId ?? input.milestoneId;
+    const milestoneIndex = String(input.externalMilestoneId ?? input.milestoneId);
 
-    const data = await this.request<{ unsignedTransaction: string }>(
-      "POST",
-      type === "multi-release"
-        ? "/escrow/multi-release/release-milestone-funds"
-        : "/escrow/single-release/release-funds",
-      type === "multi-release"
-        ? { contractId, releaseSigner, milestoneIndex: String(milestoneIndex) }
-        : { contractId, releaseSigner }
-    );
+    let txHash: string | undefined;
 
-    // Step 2: submit XDR to the network via TW helper
-    const txHash = await this.sendTransaction(data.unsignedTransaction);
+    if (type === "multi-release") {
+      // Step 1: service provider marks milestone as Completed
+      const completedData = await this.request<{ unsignedTransaction?: string }>(
+        "POST",
+        "/escrow/multi-release/change-milestone-status",
+        {
+          contractId,
+          milestoneIndex,
+          newEvidence: input.receiptHash ?? "",
+          newStatus: "Completed",
+          serviceProvider: this.signerAddress,
+        }
+      );
+      if (completedData.unsignedTransaction) {
+        await this.signAndSend(completedData.unsignedTransaction);
+      }
+
+      // Step 2: approver approves the milestone
+      const approveData = await this.request<{ unsignedTransaction?: string }>(
+        "POST",
+        "/escrow/multi-release/approve-milestone",
+        { contractId, milestoneIndex, approver: this.signerAddress }
+      );
+      if (approveData.unsignedTransaction) {
+        await this.signAndSend(approveData.unsignedTransaction);
+      }
+
+      // Step 3: release signer releases the funds
+      const releaseData = await this.request<{ unsignedTransaction: string }>(
+        "POST",
+        "/escrow/multi-release/release-milestone-funds",
+        { contractId, releaseSigner, milestoneIndex }
+      );
+      txHash = await this.signAndSend(releaseData.unsignedTransaction);
+    } else {
+      const data = await this.request<{ unsignedTransaction: string }>(
+        "POST",
+        "/escrow/single-release/release-funds",
+        { contractId, releaseSigner }
+      );
+      txHash = await this.signAndSend(data.unsignedTransaction);
+    }
 
     return {
       status: "released",
@@ -479,6 +542,16 @@ export async function submitSignedEscrowTransaction(
 
   const result = await provider.submitSignedTransaction(signedXdr);
   const txHash = result.txHash ?? result.hash;
+  // TW returns the deployed contract address after XDR submission
+  const returnedContractId = result.contractId ?? result.escrowId;
+  if (returnedContractId && (!escrow.externalId || escrow.externalId.startsWith("TW-ESC-"))) {
+    console.log(`[Escrow] Captured contractId from TW: ${returnedContractId}`);
+    await prisma.escrow.update({ where: { id: escrowId }, data: { externalId: returnedContractId } });
+    escrow.externalId = returnedContractId;
+  }
+  // Use real contractId if TW returned it; fall back to whatever was stored
+  const activeContractId = returnedContractId ?? escrow.externalId;
+
   const metadata = (escrow.metadata ?? {}) as Record<string, unknown>;
   let nextStatus: EscrowStatus = phase === "fund" ? "funded" : escrow.status as EscrowStatus;
   const nextMetadata = {
@@ -489,10 +562,10 @@ export async function submitSignedEscrowTransaction(
     lastSignedPhase: phase,
   };
 
-  if (phase === "create" && provider.fundEscrow && escrow.externalId) {
+  if (phase === "create" && provider.fundEscrow && activeContractId) {
     const funding = await provider.fundEscrow({
       escrowId,
-      externalId: escrow.externalId,
+      externalId: activeContractId,
       amount: Number(escrow.totalAmount),
     });
     nextStatus = funding.status;

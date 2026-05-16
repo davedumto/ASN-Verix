@@ -9,6 +9,7 @@ import { defaultModules } from "@creit.tech/stellar-wallets-kit/modules/utils";
 
 export const CONNECTED_WALLET_STORAGE_KEY = "verix_connected_wallet";
 export const CONNECTED_WALLET_PROVIDER_STORAGE_KEY = "verix_connected_wallet_provider";
+export const CONNECTED_WALLET_NETWORK_KEY = "verix_wallet_network";
 
 export type WalletProviderId = string;
 
@@ -56,6 +57,9 @@ function initKit() {
 function cacheWallet(wallet: ConnectedWallet) {
   localStorage.setItem(CONNECTED_WALLET_STORAGE_KEY, wallet.address);
   localStorage.setItem(CONNECTED_WALLET_PROVIDER_STORAGE_KEY, wallet.provider);
+  if (wallet.networkPassphrase) {
+    localStorage.setItem(CONNECTED_WALLET_NETWORK_KEY, wallet.networkPassphrase);
+  }
 }
 
 export function getCachedConnectedWallet(): ConnectedWallet | null {
@@ -70,6 +74,7 @@ export function getCachedConnectedWallet(): ConnectedWallet | null {
     address: cachedAddress,
     provider: cachedProvider,
     providerName: cachedProvider,
+    networkPassphrase: localStorage.getItem(CONNECTED_WALLET_NETWORK_KEY) ?? undefined,
   };
 }
 
@@ -93,6 +98,7 @@ export function clearCachedConnectedWallet() {
   if (typeof window === "undefined") return;
   localStorage.removeItem(CONNECTED_WALLET_STORAGE_KEY);
   localStorage.removeItem(CONNECTED_WALLET_PROVIDER_STORAGE_KEY);
+  localStorage.removeItem(CONNECTED_WALLET_NETWORK_KEY);
   StellarWalletsKit.disconnect().catch(() => undefined);
   selectedWalletId = undefined;
 }
@@ -101,7 +107,16 @@ export async function getAuthorizedWallet(): Promise<ConnectedWallet | null> {
   if (typeof window === "undefined") return null;
   initKit();
 
-  return getCachedConnectedWallet();
+  const cached = getCachedConnectedWallet();
+  if (cached?.provider && cached.provider !== "stellar-wallets-kit") {
+    try {
+      StellarWalletsKit.setWallet(cached.provider);
+      selectedWalletId = cached.provider;
+    } catch {
+      // wallet module not available — signing will fail gracefully
+    }
+  }
+  return cached;
 }
 
 export async function connectWallet(providerId?: WalletProviderId): Promise<ConnectedWallet> {

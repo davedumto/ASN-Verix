@@ -166,6 +166,21 @@ export async function startJob(jobId: string): Promise<boolean> {
       return true;
     }
 
+    // DB returned 0 rows — job may have been stored in the in-memory fallback
+    // by enqueueJob when the DB write failed. Check there before giving up.
+    const store = getInMemoryStore();
+    const memJob = store.get(jobId);
+    if (memJob && memJob.status === "queued") {
+      store.set(jobId, {
+        ...memJob,
+        status: "running",
+        startedAt: new Date().toISOString(),
+        attempts: memJob.attempts + 1,
+      });
+      console.log(`[Jobs] Claimed job ${jobId} (in-memory fallback)`);
+      return true;
+    }
+
     console.warn(`[Jobs] Failed to claim job ${jobId} — already running or completed`);
     return false;
   } catch (err) {

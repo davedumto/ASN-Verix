@@ -168,23 +168,41 @@ export default function EscrowTimeline({ taskId }: EscrowTimelineProps) {
 
   useEffect(() => {
     let cancelled = false;
-    async function load() {
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const TERMINAL = new Set(["completed", "cancelled", "disputed"]);
+
+    async function poll() {
       try {
         const data = await getEscrowByTask(taskId);
-        if (!cancelled) setEscrow(data.escrow);
+        if (!cancelled) {
+          setEscrow(data.escrow);
+          setLoading(false);
+          const done = data.escrow && TERMINAL.has(data.escrow.status);
+          if (!done) {
+            timeoutId = setTimeout(poll, 2500);
+          }
+        }
       } catch {
-        // escrow may not exist — silently ignore
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          timeoutId = setTimeout(poll, 5000);
+        }
       }
     }
-    load();
-    return () => { cancelled = true; };
+
+    poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [taskId]);
 
+  console.log("[EscrowTimeline] loading=", loading, "escrow=", escrow);
   if (loading || !escrow) return null;
 
   const metadata = (escrow.metadata ?? {}) as Record<string, unknown>;
+  console.log("[EscrowTimeline] status=", escrow.status, "metadata=", metadata);
   const createXdr = typeof metadata.unsignedCreateTransaction === "string"
     ? metadata.unsignedCreateTransaction
     : "";

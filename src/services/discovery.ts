@@ -146,6 +146,7 @@ async function ensureSeeded(): Promise<void> {
         update: {
           description: specialist.description,
           endpoint: specialist.endpoint,
+          walletAddress: specialist.walletAddress,
           capabilities: specialist.capabilities,
           priceUsdc: specialist.priceUsdc,
           reputation: specialist.reputation,
@@ -237,9 +238,10 @@ export async function getSpecialistSummariesForRouting(): Promise<{
 
 export async function getSpecialistByName(name: string): Promise<Specialist | undefined> {
   await ensureSeeded();
-  const row = await prisma.specialist.findFirst({
-    where: { name, status: { not: "offline" } },
-  });
+  const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, "");
+  const target = normalize(name);
+  const rows = await prisma.specialist.findMany({ where: { status: { not: "offline" } } });
+  const row = rows.find((r) => normalize(r.name) === target);
   return row ? toSpecialist(row) : undefined;
 }
 

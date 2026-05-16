@@ -29,6 +29,19 @@ export function stellarTxExplorerUrl(txHash: string): string {
   return `${STELLAR_CONFIG.explorerBaseUrl}/tx/${txHash}`;
 }
 
+/**
+ * Sign a Stellar XDR transaction envelope with a secret key and return the
+ * base64-encoded signed XDR, ready to submit via TW's /helper/send-transaction.
+ */
+export async function signStellarXdr(unsignedXdr: string, secretKey: string): Promise<string> {
+  const { TransactionBuilder, Keypair, Networks } = await import("@stellar/stellar-sdk");
+  const keypair = Keypair.fromSecret(secretKey);
+  const networkPassphrase = env.STELLAR_NETWORK_PASSPHRASE;
+  const tx = TransactionBuilder.fromXDR(unsignedXdr, networkPassphrase);
+  tx.sign(keypair);
+  return tx.toEnvelope().toXDR("base64");
+}
+
 export async function fetchStellarAccount(address: string): Promise<{
   id: string;
   balances: Array<{

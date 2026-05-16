@@ -138,7 +138,7 @@ export interface EscrowProvider {
   fundEscrow(input: FundEscrowInput): Promise<FundEscrowResult>;
   submitSignedTransaction?(
     signedXdr: string
-  ): Promise<{ txHash?: string; hash?: string }>;
+  ): Promise<{ txHash?: string; hash?: string; contractId?: string; escrowId?: string }>;
   getEscrow(externalId: string): Promise<GetEscrowResult>;
   releaseMilestone(input: ReleaseMilestoneInput): Promise<ReleaseMilestoneResult>;
   cancelEscrow?(externalId: string): Promise<void>;

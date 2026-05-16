@@ -614,6 +614,13 @@ export default function Dashboard() {
       setTaskId(response.task_id);
       setTaskStatus("decomposing");
       setEstimatedCost(response.estimated_cost);
+      // Stamp the taskId onto the thinking message so EscrowTimeline can load it
+      setMessages((prev) => {
+        const updated = [...prev];
+        const idx = updated.findIndex((m) => m.id === thinkingIdRef.current);
+        if (idx !== -1) updated[idx] = { ...updated[idx], taskId: response.task_id };
+        return updated;
+      });
 
       addThinkingStep({
         message: selectedSpecialist
@@ -684,6 +691,7 @@ export default function Dashboard() {
           timestamp: task.traceEvents[0].timestamp,
           thinkingSteps,
           thinkingDuration: duration > 0 ? duration : undefined,
+          taskId: historicTaskId,
         });
       } else if (hasLegacy && task.events) {
         const thinkingSteps: ThinkingStep[] = task.events.map((e) => ({
@@ -706,6 +714,7 @@ export default function Dashboard() {
           timestamp: task.events[0].timestamp,
           thinkingSteps,
           thinkingDuration: duration > 0 ? duration : undefined,
+          taskId: historicTaskId,
         });
       }
 

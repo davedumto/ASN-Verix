@@ -11,12 +11,25 @@ export async function GET(request: NextRequest) {
     const escrow = await prisma.escrow.findFirst({
       where: { taskId },
       include: { milestones: { orderBy: { createdAt: "asc" } } },
-    }).catch(() => null);
+    }).catch((err) => {
+      console.error("[escrow] DB error for taskId", taskId, err);
+      return null;
+    });
 
     if (!escrow) {
+      console.log("[escrow] no escrow found for taskId", taskId);
       return NextResponse.json({ escrow: null }, { status: 200 });
     }
-    return NextResponse.json({ escrow });
+    return NextResponse.json({
+      escrow: {
+        ...escrow,
+        totalAmount: Number(escrow.totalAmount),
+        milestones: escrow.milestones.map((m) => ({
+          ...m,
+          amount: Number(m.amount),
+        })),
+      },
+    });
   }
 
   const mode = env.ESCROW_MODE;

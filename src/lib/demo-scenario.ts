@@ -1,3 +1,5 @@
+import { env } from "@/lib/env";
+
 export const DEMO_OWNER_ID = "demo:golden-path";
 
 export const DEMO_TASK_ID = "demo_verix_golden_path";
@@ -7,6 +9,9 @@ export const DEMO_SPEND_CAP_USDC = 5;
 export const DEMO_GOLDEN_PROMPT =
   "Audit a Soroban escrow milestone release flow for security risks, compare the market positioning against existing AI work platforms, and produce a concise investor-ready launch memo with proof-backed settlement requirements.";
 
+// Coordinator address used as the payout wallet when no per-specialist key is configured.
+const COORDINATOR_WALLET = env.COORDINATOR_STELLAR_PUBLIC_KEY ?? "GBRUNF2IITT4B6EUUN7YSWWX5LJMM3SMTBMT75N7OG54CFVISPIO3KQ7";
+
 export const DEMO_SPECIALISTS = [
   {
     id: "specialist_code_auditor",
@@ -14,7 +19,7 @@ export const DEMO_SPECIALISTS = [
     description:
       "Reviews Soroban contracts, escrow release logic, and application code for security risks and verification gaps.",
     endpoint: "/api/specialists/code-auditor/execute",
-    walletAddress: "G" + "A".repeat(55),
+    walletAddress: env.CODE_AUDITOR_STELLAR_PUBLIC_KEY ?? COORDINATOR_WALLET,
     capabilities: [
       "security-analysis",
       "code-review",
@@ -36,7 +41,7 @@ export const DEMO_SPECIALISTS = [
     description:
       "Analyzes market demand, competitor positioning, pricing, and go-to-market strategy for autonomous work products.",
     endpoint: "/api/specialists/market-analyst/execute",
-    walletAddress: "G" + "B".repeat(55),
+    walletAddress: env.MARKET_ANALYST_STELLAR_PUBLIC_KEY ?? COORDINATOR_WALLET,
     capabilities: [
       "market-research",
       "financial-analysis",
@@ -58,7 +63,7 @@ export const DEMO_SPECIALISTS = [
     description:
       "Synthesizes technical and market findings into polished launch memos, product narratives, and investor-ready reports.",
     endpoint: "/api/specialists/creative-writer/execute",
-    walletAddress: "G" + "C".repeat(55),
+    walletAddress: env.CREATIVE_WRITER_STELLAR_PUBLIC_KEY ?? COORDINATOR_WALLET,
     capabilities: [
       "creative-writing",
       "report-writing",

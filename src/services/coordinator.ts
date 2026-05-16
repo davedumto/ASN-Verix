@@ -774,6 +774,59 @@ export async function executeCoordinator(
 // AI-POWERED TASK DECOMPOSITION
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Try AI providers in order (Claude haiku → Groq → OpenAI) for the routing
+ * prompt. Routing only needs ~500 tokens so any model works; the cascade
+ * ensures we succeed even when a particular key is missing or invalid.
+ */
+async function callRoutingLLM(prompt: string): Promise<string> {
+  if (env.CLAUDE_API_KEY) {
+    try {
+      const resp = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 500,
+        messages: [{ role: "user", content: prompt }],
+      });
+      const block = resp.content[0];
+      const text = block.type === "text" ? block.text.trim() : "";
+      if (text) {
+        console.log("[Coordinator] Routing via Claude haiku");
+        return text;
+      }
+    } catch (err) {
+      console.warn("[Coordinator] Claude routing failed, trying Groq:", (err as Error).message?.slice(0, 80));
+    }
+  }
+
+  if (env.GROQ_API_KEY) {
+    try {
+      const groqClient = new OpenAI({ apiKey: env.GROQ_API_KEY, baseURL: GROQ_BASE_URL });
+      const resp = await groqClient.chat.completions.create({
+        model: env.GROQ_MODEL,
+        max_tokens: 500,
+        temperature: 0.1,
+        messages: [{ role: "user", content: prompt }],
+      });
+      const text = resp.choices[0]?.message?.content?.trim() ?? "";
+      if (text) {
+        console.log("[Coordinator] Routing via Groq");
+        return text;
+      }
+    } catch (err) {
+      console.warn("[Coordinator] Groq routing failed, trying OpenAI:", (err as Error).message?.slice(0, 80));
+    }
+  }
+
+  console.log("[Coordinator] Routing via OpenAI");
+  const resp = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    max_tokens: 500,
+    temperature: 0.1,
+    messages: [{ role: "user", content: prompt }],
+  });
+  return resp.choices[0]?.message?.content?.trim() ?? "";
+}
+
 async function decomposeTaskWithAI(description: string): Promise<Subtask[]> {
   const specialists = await getSpecialistSummariesForRouting();
 
@@ -805,14 +858,7 @@ Return ONLY the JSON array:`;
   try {
     console.log("[Coordinator] Using AI to route task...");
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_tokens: 500,
-      temperature: 0.1,
-      messages: [{ role: "user", content: routingPrompt }],
-    });
-
-    const content = completion.choices[0]?.message?.content?.trim();
+    const content = await callRoutingLLM(routingPrompt);
     if (!content) throw new Error("Empty AI response");
 
     let jsonStr = content;
@@ -890,7 +936,8 @@ async function decomposeTaskFallback(description: string): Promise<Subtask[]> {
   }
 
   if (subtasks.length === 0 && allSpecialists.length > 0) {
-    const fallback = allSpecialists[0];
+    const sorted = [...allSpecialists].sort((a, b) => a.priceUsdc - b.priceUsdc);
+    const fallback = sorted[0];
     const activeVersion = await getActiveAgentVersion(fallback.id);
     subtasks.push({
       id: crypto.randomUUID(),

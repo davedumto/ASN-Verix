@@ -230,6 +230,8 @@ function ThinkingBlock({ message }: { message: ChatMessageData }) {
     const steps = message.thinkingSteps || [];
     const duration = message.thinkingDuration;
     const isComplete = duration !== undefined;
+    const taskId = message.taskId;
+    console.log("[ThinkingBlock] taskId =", taskId);
 
     const statusDotColor = (status: string) => {
         switch (status) {
@@ -318,6 +320,13 @@ function ThinkingBlock({ message }: { message: ChatMessageData }) {
                         </motion.div>
                     )}
                 </AnimatePresence>
+
+                {/* Escrow signing panel — shown while task awaits wallet signature */}
+                {taskId && (
+                    <div className="mt-2">
+                        <EscrowTimeline taskId={taskId} />
+                    </div>
+                )}
             </div>
         </motion.div>
     );

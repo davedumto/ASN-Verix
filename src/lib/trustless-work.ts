@@ -13,5 +13,5 @@ export function isDemoEscrowId(externalId: string | null | undefined): boolean {
 
 export function trustlessWorkEscrowViewerUrl(externalId: string | null | undefined): string | null {
   if (isDemoEscrowId(externalId)) return null;
-  return `${trustlessWorkViewerBaseUrl()}/escrow/${encodeURIComponent(externalId as string)}`;
+  return `${trustlessWorkViewerBaseUrl()}/${encodeURIComponent(externalId as string)}`;
 }
