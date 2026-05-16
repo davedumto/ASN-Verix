@@ -141,12 +141,16 @@ function evaluateMilestoneReleaseEligibility(input: {
     const metadata = (milestone.metadata ?? {}) as Record<string, unknown>;
     const specialistName = typeof metadata.specialistName === "string" ? metadata.specialistName : undefined;
     const expectedAmount = Number(milestone.amount);
-    const payment = receipt.paymentSummary.find((p) =>
-      (milestone.agentVersionHash && p.versionHash === milestone.agentVersionHash) ||
-      (specialistName && p.specialist === specialistName) ||
-      p.specialist === milestone.specialistId ||
-      (p.recipientAddress && p.recipientAddress === milestone.recipientAddress)
-    );
+    // Cascade priority so a shared recipientAddress never shadows a name/hash match
+    const payment =
+      (milestone.agentVersionHash
+        ? receipt.paymentSummary.find((p) => p.versionHash === milestone.agentVersionHash)
+        : undefined) ??
+      (specialistName
+        ? receipt.paymentSummary.find((p) => p.specialist === specialistName)
+        : undefined) ??
+      receipt.paymentSummary.find((p) => p.specialist === milestone.specialistId) ??
+      receipt.paymentSummary.find((p) => p.recipientAddress && p.recipientAddress === milestone.recipientAddress);
 
     if (!payment) {
       reasons.push("receipt_payment_summary_missing");
