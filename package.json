@@ -1,6 +1,7 @@
 {
-  "name": "agent-specialization-network",
+  "name": "verix",
   "version": "0.1.0",
+  "description": "Verifiable Autonomous Work Infrastructure on Stellar/Soroban",
   "private": true,
   "scripts": {
     "dev": "next dev",
