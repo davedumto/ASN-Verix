@@ -34,10 +34,18 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   console.log("[tasks] POST /api/tasks — start");
   try {
-    const body: CreateTaskRequest = await request.json();
+    let body: CreateTaskRequest = await request.json();
 
     if (!body.description || body.description.trim().length === 0) {
       return NextResponse.json({ error: "Task description is required" }, { status: 400 });
+    }
+
+    // Merge uploaded file content into the description so agents receive full context
+    if (Array.isArray(body.attachments) && body.attachments.length > 0) {
+      const sections = body.attachments.map((a) =>
+        `\n\n--- Attached file: ${a.name} ---\n${a.content}\n--- End of ${a.name} ---`
+      );
+      body = { ...body, description: body.description + sections.join("") };
     }
 
     if (!isStellarPublicKey(body.walletAddress)) {

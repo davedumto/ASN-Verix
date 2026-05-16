@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
-import { ArrowUp, LoaderCircle, Menu, Settings, Unplug, Wallet } from "lucide-react";
+import { ArrowUp, LoaderCircle, Menu, Paperclip, Settings, Unplug, Wallet, X } from "lucide-react";
 import ChatMessage, { ChatMessageData, ThinkingStep } from "@/components/ChatMessage";
 import ChatSidebar from "@/components/ChatSidebar";
 import ExecutionGraph from "@/components/ExecutionGraph";
@@ -114,6 +114,8 @@ export default function Dashboard() {
   // Chat state
   const [messages, setMessages] = useState<ChatMessageData[]>([]);
   const [inputValue, setInputValue] = useState("");
+  const [attachments, setAttachments] = useState<Array<{ name: string; content: string; type: string }>>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const thinkingIdRef = useRef<string | null>(null);
@@ -545,6 +547,27 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [taskId, addMessage, syncEvents, syncTraceEvents, refreshActiveWalletBalance]);
 
+  // File attachment handler
+  const handleFilesSelected = (files: FileList | null) => {
+    if (!files) return;
+    Array.from(files).forEach((file) => {
+      if (file.size > 500_000) {
+        alert(`"${file.name}" is too large (max 500 KB).`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        setAttachments((prev) => {
+          if (prev.some((a) => a.name === file.name)) return prev;
+          return [...prev, { name: file.name, content, type: file.type }];
+        });
+      };
+      reader.readAsText(file);
+    });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   // Step 1: User submits → show confirmation
   const handleRequestSubmit = () => {
     const description = inputValue.trim();
@@ -568,6 +591,7 @@ export default function Dashboard() {
     // Add user message to chat
     addMessage("user", description);
     setInputValue("");
+    setAttachments([]);
 
     // Reset textarea height
     if (inputRef.current) {
@@ -610,6 +634,7 @@ export default function Dashboard() {
         walletAddress,
         walletProvider: walletProviderName ?? walletProvider ?? undefined,
         requestedSpecialistId: selectedSpecialist?.id,
+        attachments: attachments.length > 0 ? attachments : undefined,
       });
       setTaskId(response.task_id);
       setTaskStatus("decomposing");
@@ -1101,34 +1126,76 @@ export default function Dashboard() {
                 Load demo flow
               </button>
             </div>
-            <div className="relative flex items-end gap-2 bg-surface border border-border rounded-md px-4 py-2 focus-within:border-border-strong transition-all">
-              <textarea
-                ref={inputRef}
-                value={inputValue}
-                onChange={handleTextareaInput}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  walletSource === "connected-wallet"
-                    ? selectedSpecialist
-                      ? `Describe the task for ${selectedSpecialist.name}...`
-                      : "Describe your task..."
-                    : "Connect a wallet to submit an execution..."
-                }
-                rows={1}
-                disabled={isSubmitting}
-                className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-muted resize-none focus:outline-none py-1.5 max-h-40 chat-scrollbar"
-              />
-              <button
-                onClick={handleRequestSubmit}
-                disabled={!inputValue.trim() || isSubmitting}
-                className="w-8 h-8 rounded-lg bg-accent text-white flex items-center justify-center shrink-0 hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all mb-0.5"
-              >
-                {isSubmitting ? (
-                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <ArrowUp className="h-4 w-4" aria-hidden="true" />
-                )}
-              </button>
+            <div className="bg-surface border border-border rounded-md focus-within:border-border-strong transition-all">
+              {/* Attachment chips */}
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 px-3 pt-2.5 pb-1">
+                  {attachments.map((a) => (
+                    <span key={a.name} className="flex items-center gap-1 rounded border border-border bg-surface-secondary px-2 py-0.5 text-[11px] text-ink-muted max-w-[180px]">
+                      <Paperclip className="h-3 w-3 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{a.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setAttachments((prev) => prev.filter((x) => x.name !== a.name))}
+                        className="ml-0.5 shrink-0 hover:text-ink"
+                        aria-label={`Remove ${a.name}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="relative flex items-end gap-2 px-4 py-2">
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".txt,.md,.csv,.json,.js,.ts,.tsx,.jsx,.py,.sh,.yaml,.yml,.toml,.xml,.html,.css"
+                  className="hidden"
+                  onChange={(e) => handleFilesSelected(e.target.files)}
+                />
+                {/* Attach button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isSubmitting}
+                  title="Attach files"
+                  className="shrink-0 text-ink-muted hover:text-ink disabled:opacity-30 transition-colors mb-1.5"
+                >
+                  <Paperclip className="h-4 w-4" aria-hidden="true" />
+                </button>
+
+                <textarea
+                  ref={inputRef}
+                  value={inputValue}
+                  onChange={handleTextareaInput}
+                  onKeyDown={handleKeyDown}
+                  placeholder={
+                    walletSource === "connected-wallet"
+                      ? selectedSpecialist
+                        ? `Describe the task for ${selectedSpecialist.name}...`
+                        : "Describe your task..."
+                      : "Connect a wallet to submit an execution..."
+                  }
+                  rows={1}
+                  disabled={isSubmitting}
+                  className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-muted resize-none focus:outline-none py-1.5 max-h-40 chat-scrollbar"
+                />
+                <button
+                  onClick={handleRequestSubmit}
+                  disabled={!inputValue.trim() || isSubmitting}
+                  className="w-8 h-8 rounded-lg bg-accent text-white flex items-center justify-center shrink-0 hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all mb-0.5"
+                >
+                  {isSubmitting ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <ArrowUp className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
             </div>
             <p className="text-[10px] text-ink-muted text-center mt-2">
               Proof receipts verify workflow integrity; escrow settlement depends on configured Trustless Work mode.

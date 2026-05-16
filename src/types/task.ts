@@ -87,12 +87,19 @@ export interface TaskEvent {
   timestamp: string;
 }
 
+export interface TaskAttachment {
+  name: string;
+  content: string;
+  type: string;
+}
+
 export interface CreateTaskRequest {
   description: string;
   spendCap?: number;
   walletAddress: string;
   walletProvider?: string;
   requestedSpecialistId?: string;
+  attachments?: TaskAttachment[];
 }
 
 export interface CreateTaskResponse {

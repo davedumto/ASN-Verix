@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ChevronRight, ExternalLink, LoaderCircle } from "lucide-react";
+import { ChevronRight, Download, ExternalLink, LoaderCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TaskResult } from "@/types/task";
 import { ExecutionReceipt } from "@/types/trace";
@@ -387,6 +387,31 @@ function ResultCard({
     const canVerify = proof?.status === "proven" && !isVerified;
     const isApproved = approval.status === "approved";
 
+    const handleDownload = () => {
+        const lines: string[] = [];
+        lines.push(`# Verix Execution Report`);
+        lines.push(`\n**Task ID:** ${taskId ?? "—"}`);
+        lines.push(`**Total Cost:** $${result.totalCost.toFixed(2)} USDC`);
+        lines.push(`**Execution Time:** ${result.totalTime.toFixed(1)}s`);
+        if (receipt?.receiptHash) lines.push(`**Receipt Hash:** ${receipt.receiptHash}`);
+        lines.push(`\n## Summary\n\n${result.summary}`);
+        lines.push(`\n## Deliverables`);
+        for (const d of result.deliverables) {
+            lines.push(`\n### ${d.title} (${d.specialistName})\n\n${d.content}`);
+        }
+        lines.push(`\n## Payment Audit Trail`);
+        for (const p of result.paymentBreakdown) {
+            lines.push(`- **${p.specialist}**: $${Number(p.amount).toFixed(2)} USDC — ${p.status}${p.txHash ? ` — tx: ${p.txHash}` : ""}`);
+        }
+        const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `verix-report-${taskId ? taskId.slice(0, 8) : Date.now()}.md`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
     const handleApprove = async () => {
         if (!taskId || approving || isApproved) return;
         setApproving(true);
@@ -458,6 +483,15 @@ function ResultCard({
                                     <ExternalLink className="ml-1 inline h-3 w-3" aria-hidden="true" />
                                 </Link>
                             )}
+                            <button
+                                type="button"
+                                onClick={handleDownload}
+                                title="Download report as Markdown"
+                                className="flex items-center gap-1 text-[10px] font-medium text-ink-muted hover:text-ink transition-colors"
+                            >
+                                <Download className="h-3 w-3" aria-hidden="true" />
+                                Download
+                            </button>
                         </div>
                     </div>
 

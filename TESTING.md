@@ -1,10 +1,10 @@
 # Verix End-to-End Testing Checklist
 
-Manual QA walkthrough of the complete platform: landing → wallet → marketplace → agent creation → task submission → live execution → receipt → proof verification.
+Manual QA walkthrough of the complete platform: landing → wallet → marketplace → agent creation → task submission → file upload → live execution → receipt → proof verification → escrow settlement → result download.
 
 **Prerequisites:**
 - Dev server running: `npm run dev` (clear `.next/` first if routes were recently changed)
-- Freighter browser extension installed and set to **Stellar Testnet**
+- Albedo or Freighter browser extension installed and set to **Stellar Testnet**
 - Demo data seeded: `npm run demo:seed`
 - `.env.local` configured with `PROOF_MODE=local` and `ESCROW_MODE=demo` for local testing
 
@@ -25,12 +25,14 @@ Manual QA walkthrough of the complete platform: landing → wallet → marketpla
 - [ ] Dashboard loads — sidebar + empty chat area with suggestion chips
 - [ ] Wallet section shows "Not connected" state
 - [ ] Click "Connect Wallet" → wallet picker modal opens with provider list
-- [ ] Select Freighter → wallet connects and modal closes
+- [ ] Select **Albedo** → wallet connects and modal closes
+- [ ] Select **Freighter** → wallet connects and modal closes
 - [ ] Wallet address appears in sidebar (G… truncated)
 - [ ] USDC balance loads correctly (testnet balance)
 - [ ] XLM native balance loads
 - [ ] Disconnect wallet → state resets to "Not connected"
 - [ ] Re-connect → address and balance restore from cache without re-prompting
+- [ ] After page reload, wallet-kit correctly restores the previously selected provider (Albedo or Freighter) so signing works without re-selecting
 
 ---
 
@@ -93,7 +95,19 @@ Navigate via gear icon in dashboard top bar:
 
 ---
 
-## 7. Task Submission — Coordinator Auto-Routes
+## 7. File Attachments
+
+- [ ] Click the **paperclip icon** in the input bar → file picker opens
+- [ ] Select a `.txt` or `.md` file → chip appears above the textarea showing filename
+- [ ] Select a second file → second chip appears
+- [ ] Click the `×` on a chip → file is removed from the list
+- [ ] Attach a file > 500 KB → alert: "is too large (max 500 KB)"
+- [ ] Submit a task with attachments — confirm in the terminal logs that the attachment content appears in the task description sent to the coordinator
+- [ ] Specialist reports reference or address content from the attached file
+
+---
+
+## 8. Task Submission — Coordinator Auto-Routes
 
 With wallet connected:
 
@@ -110,7 +124,7 @@ With wallet connected:
 
 ---
 
-## 8. Task Submission — Pinned Agent
+## 9. Task Submission — Pinned Agent
 
 - [ ] Go to `/marketplace/specialist_code_auditor` → "Hire Agent"
 - [ ] Enter: `"Review this Soroban escrow contract for reentrancy vulnerabilities."`
@@ -119,7 +133,7 @@ With wallet connected:
 
 ---
 
-## 9. Live Execution View
+## 10. Live Execution View
 
 While task is running:
 
@@ -139,18 +153,21 @@ While task is running:
 
 ---
 
-## 10. Task Result
+## 11. Task Result
 
 After completion:
 
 - [ ] Full deliverable text appears in chat (one block per specialist)
 - [ ] Total cost shown (e.g., "Total: $2.25 USDC")
 - [ ] "View Receipt" button visible in result card
+- [ ] **Download button** visible in result card header (next to "View Receipt")
+- [ ] Click **Download** → browser downloads `verix-report-<taskId>.md`
+- [ ] Opened file contains: summary, each specialist's deliverable under its own heading, payment audit trail with tx hashes
 - [ ] Task appears in sidebar task history with correct status
 
 ---
 
-## 11. Receipt Explorer (`/receipts/[taskId]`)
+## 12. Receipt Explorer (`/receipts/[taskId]`)
 
 Click "View Receipt" or navigate directly:
 
@@ -173,7 +190,7 @@ Click "View Receipt" or navigate directly:
 
 ---
 
-## 12. Trace Explorer (`/trace/[taskId]`)
+## 13. Trace Explorer (`/trace/[taskId]`)
 
 - [ ] Event chain shows all events ordered by sequence number (1, 2, 3…)
 - [ ] Each event shows: actor badge (coordinator / payment / specialist), event type, display message, timestamp
@@ -183,7 +200,49 @@ Click "View Receipt" or navigate directly:
 
 ---
 
-## 13. Edge Case — Spend Cap Exceeded
+## 14. Live Escrow (`ESCROW_MODE=live`)
+
+Set `.env.local`:
+```
+ESCROW_MODE=live
+TRUSTLESS_WORK_SIGNING_MODE=wallet
+COORDINATOR_STELLAR_PRIVATE_KEY=S...
+```
+
+Then restart the dev server and submit a task.
+
+### Deploy & Fund (wallet signing)
+
+- [ ] Task starts → `EscrowTimeline` panel appears in the thinking block within ~2.5 seconds of escrow creation
+- [ ] Status shows **Funding Pending** and "Wallet signature required" with **Sign deploy** button
+- [ ] Click **Sign deploy** → Albedo/Freighter popup opens showing the deploy XDR
+- [ ] Sign in Albedo → TW confirms deployment (`201 SUCCESS`)
+- [ ] Panel updates: second signing prompt appears for the **fund transaction**
+- [ ] Click **Sign funding** → Albedo/Freighter popup opens for the fund XDR
+- [ ] Sign → `201 SUCCESS`; status updates to **Funded**; milestones show `Created → Funded` track
+- [ ] Agents begin executing (coordinator_execution_resume job enqueued)
+
+### Milestone Release (after payout approval)
+
+- [ ] Task completes and proof is verified → "Approve payout" button appears
+- [ ] Click **Approve payout** → wallet signs the approval
+- [ ] Server automatically runs 3-step on-chain release for each eligible milestone:
+  - `change-milestone-status` signed with `COORDINATOR_STELLAR_PRIVATE_KEY`
+  - `approve-milestone` signed with `COORDINATOR_STELLAR_PRIVATE_KEY`
+  - `release-milestone-funds` signed with `COORDINATOR_STELLAR_PRIVATE_KEY`
+- [ ] Milestone tracks in EscrowTimeline update to **Released**
+- [ ] "View on Trustless Work" link opens escrow viewer showing milestones as Released
+- [ ] Wallet USDC balance decreases by the escrowed amount
+- [ ] Click **Retry release** if any milestone shows Failed — server re-attempts the release flow
+
+### Sync
+
+- [ ] Click **Sync** in the EscrowTimeline → fetches live on-chain status from TW indexer
+- [ ] Milestone statuses update to match on-chain state
+
+---
+
+## 15. Edge Case — Spend Cap Exceeded
 
 - [ ] Submit any task with spend cap set to $0.10
 - [ ] Task fails immediately with: "Estimated cost exceeds your spend cap"
@@ -192,12 +251,21 @@ Click "View Receipt" or navigate directly:
 
 ---
 
-## 14. Edge Case — No Wallet Connected
+## 16. Edge Case — No Wallet Connected
 
 - [ ] Disconnect wallet
 - [ ] Try to submit a task → submit button is disabled OR error shown:
   "A connected Stellar wallet is required to submit a task"
 - [ ] Task cannot proceed without a valid Stellar public key
+
+---
+
+## 17. Edge Case — Wrong Wallet Signs Escrow
+
+- [ ] Connect wallet A, submit task (escrow payer = wallet A)
+- [ ] Disconnect and connect wallet B
+- [ ] Click Sign in EscrowTimeline → error: "Connected wallet does not match the task payer wallet."
+- [ ] Reconnect wallet A → signing proceeds normally
 
 ---
 
@@ -211,3 +279,7 @@ Click "View Receipt" or navigate directly:
 | Wallet balance returns 0 with error | Stellar Horizon has a 6s timeout; check network connectivity to `horizon-testnet.stellar.org` |
 | Task hangs at payment stage | Switch `ESCROW_MODE=demo` in `.env.local` to avoid live Trustless Work API calls |
 | "Not found" on receipt page | Proof generation is async; wait a few seconds after task completion and refresh |
+| EscrowTimeline sign button never appears | Check browser console for `[EscrowTimeline]` logs; verify `taskId` is stamped onto the thinking message after task submission |
+| TW returns 400 "milestone must be completed" | Ensure `COORDINATOR_STELLAR_PRIVATE_KEY` is set — server needs the key to sign change-status and approve XDRs |
+| Albedo signing fails after page reload | Wallet kit re-initialises without a selected provider on reload; `getAuthorizedWallet()` now calls `setWallet()` automatically using the cached provider ID |
+| `receipt_amount_mismatch` blocks milestone release | Caused by all specialists sharing the same wallet address; specialist-name matching now takes priority over address matching |
