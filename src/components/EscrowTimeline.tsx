@@ -341,7 +341,8 @@ export default function EscrowTimeline({ taskId }: EscrowTimelineProps) {
         </div>
       </div>
 
-      {(syncStatus || escrow.milestones.some((ms) => ms.status === "failed")) && (
+      {(syncStatus || escrow.milestones.some((ms) => ms.status === "failed") ||
+        (escrow.milestones.some((ms) => ms.status === "released") && escrow.milestones.some((ms) => ms.status === "funded"))) && (
         <div className="border-b border-border px-4 py-2 text-[10px] text-ink-muted">
           <div className="flex items-center justify-between gap-3">
             <span>
@@ -349,9 +350,10 @@ export default function EscrowTimeline({ taskId }: EscrowTimelineProps) {
                 ? `Sync/recovery error: ${syncStatus.error}`
                 : syncStatus?.at
                   ? `Last checked ${new Date(syncStatus.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${syncStatus.synced ? " - synced" : " - local/demo"}`
-                  : "Release retry available for failed milestones."}
+                  : "Release retry available for pending milestones."}
             </span>
-            {escrow.milestones.some((ms) => ms.status === "failed") && (
+            {(escrow.milestones.some((ms) => ms.status === "failed") ||
+              (escrow.milestones.some((ms) => ms.status === "released") && escrow.milestones.some((ms) => ms.status === "funded"))) && (
               <button
                 type="button"
                 onClick={handleRetryRelease}

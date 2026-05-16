@@ -31,6 +31,11 @@ export async function POST(
     );
   }
   if (task.approvalStatus === "approved") {
+    // Already approved — still attempt release in case any milestones were skipped
+    const receiptForRetry = await getReceipt(task.id).catch(() => null);
+    if (receiptForRetry) {
+      await releaseEscrowMilestones(task.id, receiptForRetry, { allowManual: true }).catch(() => {});
+    }
     return NextResponse.json({
       approvalStatus: task.approvalStatus,
       approvedAt: task.approvedAt,
