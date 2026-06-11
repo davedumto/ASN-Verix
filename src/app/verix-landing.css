@@ -166,15 +166,15 @@ html:has(.verix-landing) { overflow-x: hidden; }
   padding-top: 16px; padding-bottom: 16px;
 }
 .verix-landing .nav-logo {
-  font-family: var(--font-display);
-  font-weight: 700; font-size: 22px; letter-spacing: -0.03em;
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center;
 }
-.verix-landing .nav-logo .mark {
-  width: 12px; height: 12px; border-radius: 3px;
-  background: conic-gradient(from 220deg, var(--m-blue), var(--m-violet), var(--m-pink), var(--m-teal), var(--m-blue));
-  box-shadow: 0 0 18px rgba(124,107,255,0.7);
+/* logo-mark.png is tightly cropped (no padding) so the box height = the visible
+   logo height. !important beats next/image's inline width/height. */
+.verix-landing .nav-logo-img {
+  height: 40px !important; width: auto !important; display: block;
+  object-fit: contain;
 }
+.verix-landing .footer-brand .nav-logo-img { height: 30px !important; }
 .verix-landing .nav-links { display: flex; gap: 36px; }
 .verix-landing .nav-links a { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-family: var(--font-mono-tech); transition: color .25s; }
 .verix-landing .nav-links a:hover { color: var(--text); }
@@ -741,10 +741,10 @@ html:has(.verix-landing) { overflow-x: hidden; }
 }
 .verix-landing .stack-card::after { content: ""; position: absolute; right: -10%; top: -30%; width: 50%; height: 130%; background: radial-gradient(closest-side, rgba(123,107,255,0.16), transparent 70%); pointer-events: none; }
 .verix-landing .stack-card .sc-no { font-family: var(--font-display); font-weight: 600; font-size: clamp(40px, 5vw, 76px); letter-spacing: -0.03em; color: transparent; -webkit-text-stroke: 1.5px rgba(255,255,255,0.28); line-height: 0.9; }
-.verix-landing .stack-card .sc-main { max-width: 30ch; }
-.verix-landing .stack-card .sc-main h3 { font-size: clamp(30px, 4.4vw, 60px); letter-spacing: -0.03em; margin-bottom: 22px; }
-.verix-landing .stack-card .sc-main p { color: var(--body); font-size: clamp(15px, 1.4vw, 18px); line-height: 1.7; }
-.verix-landing .stack-card .sc-tag { align-self: center; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-2); font-family: var(--font-mono-tech); white-space: nowrap; }
+.verix-landing .stack-card .sc-main { max-width: 38ch; }
+.verix-landing .stack-card .sc-main h3 { font-size: clamp(32px, 4.6vw, 60px); letter-spacing: -0.03em; margin-bottom: 24px; }
+.verix-landing .stack-card .sc-main p { color: #d6d6e2; font-size: clamp(18px, 1.7vw, 23px); line-height: 1.65; }
+.verix-landing .stack-card .sc-tag { align-self: center; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-2); font-family: var(--font-mono-tech); white-space: nowrap; }
 .verix-landing .stack-card .sc-orb { position: absolute; right: 6%; bottom: -20%; width: 320px; height: 320px; border-radius: 50%; opacity: 0.85;
   background: radial-gradient(40% 36% at 36% 30%, #fff, transparent 44%), radial-gradient(80% 80% at 60% 70%, var(--m-violet), transparent 70%), radial-gradient(120% 120% at 50% 50%, var(--m-blue), #1b1850 80%);
   filter: blur(2px) saturate(110%); }
@@ -950,7 +950,7 @@ html:has(.verix-landing.menu-open) { overflow: hidden; }
 }
 
 @media (max-width: 520px) {
-  .verix-landing .nav-logo { font-size: 19px; }
+  .verix-landing .nav-logo-img { height: 26px !important; }
   .verix-landing .hero-title { font-size: clamp(36px, 13vw, 60px); }
   .verix-landing .hero-kicker { font-size: 10.5px; letter-spacing: 0.18em; }
   .verix-landing .hero-cta { flex-direction: column; align-items: stretch; }

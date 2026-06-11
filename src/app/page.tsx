@@ -715,7 +715,9 @@ export default function Home() {
 
       {/* ============ NAV ============ */}
       <nav className="nav" id="nav">
-        <a className="nav-logo" href="#top"><span className="mark" />VERIX</a>
+        <a className="nav-logo" href="#top" aria-label="Verix">
+          <Image className="nav-logo-img" src="/logo-mark.png" alt="Verix" width={976} height={344} priority />
+        </a>
         <div className="nav-links">
           <a href="#features" data-cursor>Protocol</a>
           <a href="#how" data-cursor>How it works</a>
@@ -1184,7 +1186,9 @@ export default function Home() {
       <footer className="footer">
         <div className="footer-top">
           <div className="footer-brand">
-            <a className="nav-logo" href="#top"><span className="mark" />VERIX</a>
+            <a className="nav-logo" href="#top" aria-label="Verix">
+              <Image className="nav-logo-img" src="/logo-mark.png" alt="Verix" width={976} height={344} />
+            </a>
             <p>The verifiable AI execution layer for Stellar DeFi. Mandates in, proofs out.</p>
           </div>
           <div className="footer-col">

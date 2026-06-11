@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   LoaderCircle, Settings, Wallet, Unplug, ChevronRight,
   TrendingUp, ArrowRightLeft, Droplets, ArrowUpRight, ShieldCheck,
@@ -521,13 +522,8 @@ export default function Dashboard() {
       }}>
         {/* Logo + status */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <Link href="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <rect width="24" height="24" rx="6" fill="#5b5fc7"/>
-              <path d="M7 8l5 8 5-8" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M12 16V8" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" opacity="0.4"/>
-            </svg>
-            <span style={{ fontSize: 14, fontWeight: 650, letterSpacing: "-0.02em" }}>Verix</span>
+          <Link href="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
+            <Image src="/logo-mark.png" alt="Verix" width={976} height={344} priority style={{ height: 26, width: "auto", objectFit: "contain", display: "block" }} />
           </Link>
           <span style={{ width: 1, height: 16, background: "rgba(255,255,255,0.1)" }} />
           <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", letterSpacing: "0.02em" }}>
