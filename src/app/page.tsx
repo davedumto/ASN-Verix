@@ -410,8 +410,170 @@ export default function Home() {
       on(form, "submit", submit as EventListener);
     }
 
-    /* ── 11. SCROLL ENGINE — illuminate · console-3d · drift · marquee ─────── */
+    /* ── 11. SCROLL ENGINE — illuminate · console-3d · drift · marquee · scrub ── */
     const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+
+    // ── scroll-scrubbed video canvas (thesis vault reveal) ──────────────────────
+    // Preload all extracted frames, then draw the frame that maps to how far the
+    // user has scrolled through the section's tall track. Drawn inside scrollEngine.
+    const scrubSection = $<HTMLElement>("[data-scrub-section]");
+    const scrubCanvas = $<HTMLCanvasElement>("[data-scrub-canvas]");
+    const scrubFrames: HTMLImageElement[] = [];
+    let lastFrameDrawn = -1;
+    const scrubCtx = scrubCanvas?.getContext("2d") ?? null;
+    if (scrubSection && scrubCanvas && scrubCtx) {
+      const total = parseInt(scrubSection.dataset.frames ?? "92", 10);
+      // Size the canvas buffer to its on-screen box (×DPR) so the full-bleed
+      // cover render stays crisp instead of being CSS-upscaled from 850×720.
+      const sizeCanvas = () => {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const rect = scrubCanvas.getBoundingClientRect();
+        const w = Math.max(1, Math.round(rect.width * dpr));
+        const h = Math.max(1, Math.round(rect.height * dpr));
+        if (scrubCanvas.width !== w || scrubCanvas.height !== h) {
+          scrubCanvas.width = w; scrubCanvas.height = h;
+        }
+      };
+      const drawFrame = (idx: number) => {
+        const img = scrubFrames[idx];
+        if (!img || !img.complete || img.naturalWidth === 0) return;
+        // cover-fit the frame into the canvas pixel box
+        const cw = scrubCanvas.width, ch = scrubCanvas.height;
+        const ir = img.naturalWidth / img.naturalHeight;
+        const cr = cw / ch;
+        let dw = cw, dh = ch, dx = 0, dy = 0;
+        if (ir > cr) { dh = ch; dw = ch * ir; dx = (cw - dw) / 2; }
+        else { dw = cw; dh = cw / ir; dy = (ch - dh) / 2; }
+        scrubCtx.clearRect(0, 0, cw, ch);
+        scrubCtx.drawImage(img, dx, dy, dw, dh);
+        lastFrameDrawn = idx;
+      };
+      sizeCanvas();
+      on(window, "resize", (() => { sizeCanvas(); if (lastFrameDrawn >= 0) { const i = lastFrameDrawn; lastFrameDrawn = -1; drawFrame(i); } }) as EventListener);
+      // preload frames; draw the first one as soon as it lands. window.Image is
+      // the DOM constructor (the module-scope `Image` is next/image's component).
+      for (let i = 1; i <= total; i++) {
+        const img = new window.Image();
+        const n = String(i).padStart(3, "0");
+        img.src = `/sphere/frame_${n}.jpg`;
+        if (i === 1) img.onload = () => drawFrame(0);
+        scrubFrames.push(img);
+      }
+      // ── travelling text mover ─────────────────────────────────────────────
+      const mover = scrubSection.querySelector<HTMLElement>("[data-scrub-mover]");
+      const copyHost = scrubSection.querySelector<HTMLElement>("[data-scrub-copy]");
+      // copy + the corner each waypoint rests at, in path order. React renders
+      // the spans as light-DOM children (not into template.content), so query
+      // descendants directly.
+      const copyByCorner: Record<string, string> = {};
+      if (copyHost) {
+        copyHost.querySelectorAll("span[data-corner]").forEach((s) => {
+          const c = s.getAttribute("data-corner");
+          if (c) copyByCorner[c] = s.textContent ?? "";
+        });
+      }
+      // The 4 path waypoints, in order. Each: the screen corner + its copy.
+      const PATH = [
+        { corner: "tl", text: copyByCorner.tl ?? "" },
+        { corner: "bl", text: copyByCorner.bl ?? "" },
+        { corner: "br", text: copyByCorner.br ?? "" },
+        { corner: "tr", text: copyByCorner.tr ?? "" },
+      ];
+      // corner → {x,y} anchor as a fraction of the stage box (computed per frame
+      // so it tracks resize). Returns top-left position for the element.
+      const cornerPos = (corner: string, sw: number, sh: number, mw: number, mh: number) => {
+        const padX = sw * 0.05, padY = sh * 0.14;       // edge insets
+        const left = corner.includes("l");
+        const top = corner.includes("t");
+        const x = left ? padX : sw - mw - padX;
+        const y = top ? padY : sh - mh - padY;
+        return { x, y, alignRight: !left };
+      };
+      let lastMoverText = "";
+      // Timeline: the mover occupies scroll range [START,END]; within it, time is
+      // split into per-segment "hold then travel" so the text RESTS at a corner
+      // then MOVES (visible) in a straight line to the next corner.
+      const M_START = 0.06, M_END = 0.97;
+
+      // Gentle settle zones so the morph doesn't snap at the very start/end:
+      // a short hold at each extreme, the continuous sphere flow scrubbed across
+      // the long middle. Light holds keep the motion feeling alive (this is a
+      // continuous animation, not a one-shot reveal).
+      const HOLD_IN = 0.06, HOLD_OUT = 0.94;
+      const frameProgress = (p: number) => {
+        if (p <= HOLD_IN) return 0;
+        if (p >= HOLD_OUT) return 1;
+        return (p - HOLD_IN) / (HOLD_OUT - HOLD_IN);
+      };
+
+      // expose the updater to scrollEngine via a closure-scoped fn
+      (scrubSection as HTMLElement & { __drawScrub?: () => void }).__drawScrub = () => {
+        const r = scrubSection.getBoundingClientRect();
+        const vh = window.innerHeight || document.documentElement.clientHeight;
+        const travel = r.height - vh;
+        const p = travel > 0 ? clamp(-r.top / travel, 0, 1) : 0;
+
+        // draw the matching video frame (paced through the 3 zones)
+        const fp = frameProgress(p);
+        const idx = Math.min(total - 1, Math.round(fp * (total - 1)));
+        if (idx !== lastFrameDrawn) drawFrame(idx);
+
+        // ── ONE text element physically travelling the corner path ──────────
+        // The text RESTS at a corner (showing that corner's copy), then MOVES in
+        // a straight line to the next corner while staying fully visible. Copy
+        // swaps only during the brief moment it's between corners (lowest opacity)
+        // so you never see a word change mid-air.
+        if (mover && PATH.length >= 2) {
+          const ease = (t: number) => t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; // easeInOutCubic
+          const segs = PATH.length - 1;                  // 3 travel segments
+          const stage = scrubSection.querySelector<HTMLElement>(".thesis-stage");
+          const sw = stage?.clientWidth ?? window.innerWidth;
+          const sh = stage?.clientHeight ?? window.innerHeight;
+          const mw = mover.offsetWidth || 360;
+          const mh = mover.offsetHeight || 80;
+
+          // local timeline 0→1 across the mover's scroll range
+          const mt = clamp((p - M_START) / (M_END - M_START), 0, 1);
+          // total units = segs travels + (segs+1) holds. Holds are longer than
+          // travels so the text dwells (readable) and moves crisply between.
+          const HOLD = 1.6, TRAVEL = 1.0;
+          const unit = segs * TRAVEL + (segs + 1) * HOLD;
+          let acc = mt * unit;                           // consume time units
+
+          let fromIdx = 0, localT = 0, moving = false;
+          // walk: hold(0) travel(0) hold(1) travel(1) … hold(segs)
+          for (let i = 0; i <= segs; i++) {
+            if (acc < HOLD) { fromIdx = i; localT = 0; moving = false; break; }
+            acc -= HOLD;
+            if (i < segs) {
+              if (acc < TRAVEL) { fromIdx = i; localT = acc / TRAVEL; moving = true; break; }
+              acc -= TRAVEL;
+            } else { fromIdx = segs; localT = 0; moving = false; }
+          }
+
+          const from = PATH[fromIdx];
+          const to = PATH[Math.min(fromIdx + 1, PATH.length - 1)];
+          const a = cornerPos(from.corner, sw, sh, mw, mh);
+          const b = cornerPos(to.corner, sw, sh, mw, mh);
+          const t = moving ? ease(localT) : 0;
+          const x = a.x + (b.x - a.x) * t;
+          const y = a.y + (b.y - a.y) * t;
+
+          // opacity dips in the middle of a travel so the copy swap is unseen;
+          // full + steady while resting at a corner.
+          const o = moving ? 0.25 + 0.75 * Math.abs(localT - 0.5) * 2 : 1;
+          // show the destination's copy once past the travel midpoint, else origin's
+          const text = moving && localT > 0.5 ? to.text : from.text;
+          // align right when resting/heading to a right-side corner
+          const right = (moving ? (localT > 0.5 ? b : a) : a).alignRight;
+
+          if (text !== lastMoverText) { mover.textContent = text; lastMoverText = text; }
+          mover.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+          mover.style.opacity = o.toFixed(3);
+          mover.style.textAlign = right ? "right" : "left";
+        }
+      };
+    }
 
     // word-illuminate (Sohub fill)
     const illum = $<HTMLElement>("[data-illuminate]");
@@ -463,6 +625,10 @@ export default function Home() {
       const vh = window.innerHeight || document.documentElement.clientHeight;
       const y = window.scrollY;
       const dy = y - lastY; lastY = y;
+
+      // scroll-scrubbed vault canvas
+      const drawScrub = (scrubSection as (HTMLElement & { __drawScrub?: () => void }) | null)?.__drawScrub;
+      if (drawScrub) drawScrub();
 
       if (illumWords.length && illum) {
         const r = illum.getBoundingClientRect();
@@ -629,17 +795,30 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ============ MANIFESTO (scroll illuminate) ============ */}
-      <section className="manifesto" id="manifesto">
-        <div className="manifesto-glow" />
-        <div className="manifesto-inner">
-          <div className="section-eyebrow kicker fade-up" style={{ marginBottom: 40 }}>The thesis</div>
-          <p className="illuminate" data-illuminate>
-            AI agents are about to move real money on-chain. The question isn&apos;t whether they can act — it&apos;s whether you can <span className="accent">prove</span> they acted inside the lines. Verix makes every action <span className="accent">verifiable.</span>
-          </p>
-          <div className="manifesto-foot">
-            <div className="mf fade-up"><b>Bounded by design</b><p>Agents operate inside policies they cannot exceed — not guidelines they might follow.</p></div>
-            <div className="mf fade-up"><b>Proven, not promised</b><p>Every decision and transaction is committed to Soroban and independently checkable.</p></div>
+      {/* ============ THESIS — "Specimen": the vault, examined ============ */}
+      <section className="thesis" id="manifesto" data-scrub-section data-frames="96">
+        <div className="thesis-track">
+          <div className="thesis-stage">
+            {/* full-bleed scrubbed video */}
+            <canvas className="thesis-canvas" data-scrub-canvas width={1280} height={720} aria-hidden="true" />
+            {/* left scrim — guarantees text legibility over the video's dark zone */}
+            <div className="thesis-scrim" />
+
+            {/* quiet kicker, top-left, static */}
+            <span className="thesis-kicker">Verix · proof</span>
+
+            {/* ONE text element that physically travels a straight-line path
+                between corners (TL → BL → BR → TR), staying visible the whole
+                way and swapping its words only at each waypoint. JS sets its
+                position + content. */}
+            <p className="thesis-mover" data-scrub-mover />
+            {/* copy source for the mover (hidden; read by JS at mount) */}
+            <div data-scrub-copy hidden>
+              <span data-corner="tl">AI agents are about to move real money.</span>
+              <span data-corner="bl">The question isn&apos;t whether they can act.</span>
+              <span data-corner="br">It&apos;s whether you can prove they stayed inside the lines.</span>
+              <span data-corner="tr">Verix makes every action verifiable.</span>
+            </div>
           </div>
         </div>
       </section>

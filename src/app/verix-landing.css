@@ -652,28 +652,76 @@ html:has(.verix-landing) { overflow-x: hidden; }
 .verix-landing image-slot { color: rgba(236,236,244,0.55) !important; }
 
 /* ============================================================
-   MANIFESTO — scroll word-illuminate (Sohub fill)
+   THESIS — "Specimen"
+   The vault floats as a single contained object in a dark void.
+   Nothing moves but the vault opening (scrubbed) and one statement
+   crossfading at a time. No frame, no brackets, no HUD, no glow —
+   darkness and space do the framing; the video supplies the only color.
+   NOTE: no overflow on .thesis — it would break the sticky pin inside.
    ============================================================ */
-.verix-landing .manifesto { padding: clamp(120px, 22vh, 240px) var(--pad); border-top: 1px solid var(--line); position: relative; overflow: hidden; }
-.verix-landing .manifesto-glow { position: absolute; left: 50%; top: 50%; width: 70vw; height: 60vh; transform: translate(-50%,-50%); background: radial-gradient(50% 50% at 50% 50%, rgba(123,107,255,0.10), transparent 70%); filter: blur(40px); pointer-events: none; }
-.verix-landing .manifesto-inner { max-width: 1320px; margin: 0 auto; position: relative; z-index: 2; }
-.verix-landing .illuminate {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: clamp(28px, 4.4vw, 74px);
-  line-height: 1.18;
-  letter-spacing: -0.02em;
-  max-width: 19ch;
+.verix-landing .thesis { position: relative; border-top: 1px solid var(--line); background: var(--bg); }
+.verix-landing .thesis-track { position: relative; height: 520vh; }
+
+.verix-landing .thesis-stage {
+  position: sticky; top: 0;
+  height: 100vh; width: 100%;
+  overflow: hidden;
+  background: var(--bg);
 }
-.verix-landing .illuminate .w { display: inline-block; color: #F2F2F8; opacity: 0.14; transition: opacity .12s linear; will-change: opacity; }
-.verix-landing .illuminate .w.accent {
-  background: linear-gradient(100deg, var(--m-violet), var(--m-pink) 45%, var(--m-teal));
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+
+/* full-bleed video — cover-fits the viewport (JS draws cover into the buffer) */
+.verix-landing .thesis-canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block; z-index: 0;
 }
-.verix-landing .manifesto-foot { margin-top: 64px; display: flex; gap: 60px; flex-wrap: wrap; }
-.verix-landing .manifesto-foot .mf { max-width: 30ch; }
-.verix-landing .manifesto-foot .mf b { font-family: var(--font-display); font-weight: 600; font-size: 17px; display: block; margin-bottom: 8px; }
-.verix-landing .manifesto-foot .mf p { color: var(--body); font-size: 13.5px; line-height: 1.6; }
+
+/* left scrim — sinks the video's dark-left zone darker so text reads cleanly,
+   fading to transparent before it reaches the sphere. No visible box. */
+.verix-landing .thesis-scrim {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    /* darken the left edge (top-left + mid-left text) */
+    linear-gradient(90deg, rgba(5,7,15,0.9) 0%, rgba(5,7,15,0.55) 22%, rgba(5,7,15,0.12) 40%, transparent 54%),
+    /* darken the bottom-right corner (br text) */
+    radial-gradient(60% 70% at 100% 100%, rgba(5,7,15,0.78), transparent 62%),
+    /* gentle top + bottom edge sink */
+    linear-gradient(to bottom, rgba(5,7,15,0.4) 0%, transparent 20%, transparent 82%, rgba(5,7,15,0.45) 100%);
+}
+
+/* quiet kicker, top-left, static */
+.verix-landing .thesis-kicker {
+  position: absolute; top: clamp(28px, 7vh, 72px); left: var(--pad); z-index: 3;
+  font-family: var(--font-mono-tech); font-size: 12px; letter-spacing: 0.22em;
+  text-transform: uppercase; color: rgba(236,236,244,0.4);
+}
+
+/* ONE text element that physically travels a straight-line corner path
+   (TL → BL → BR → TR). JS sets its transform (position) + content. It's
+   anchored top-left at (0,0); JS translate places it. */
+.verix-landing .thesis-mover {
+  position: absolute; top: 0; left: 0; z-index: 3;
+  width: min(20ch, 40vw);
+  font-family: var(--font-display); font-weight: 500;
+  font-size: clamp(28px, 3.4vw, 54px); line-height: 1.12; letter-spacing: -0.025em;
+  color: #f3f3fa; text-shadow: 0 2px 36px rgba(0,0,0,0.75);
+  opacity: 0; will-change: transform, opacity;
+}
+
+@media (max-width: 880px) {
+  .verix-landing .thesis-track { height: 440vh; }
+  .verix-landing .thesis-scrim {
+    background:
+      linear-gradient(90deg, rgba(5,7,15,0.85) 0%, rgba(5,7,15,0.4) 26%, transparent 50%),
+      radial-gradient(60% 60% at 100% 100%, rgba(5,7,15,0.7), transparent 64%),
+      linear-gradient(to bottom, rgba(5,7,15,0.4) 0%, transparent 24%, transparent 80%, rgba(5,7,15,0.6) 100%);
+  }
+  /* mover still travels the corner path, just smaller + narrower box */
+  .verix-landing .thesis-mover {
+    width: min(70vw, 320px);
+    font-size: clamp(24px, 6.2vw, 34px);
+  }
+}
 
 /* ============================================================
    STICKY STACKING CARDS (Sohub services)
@@ -843,9 +891,7 @@ html:has(.verix-landing.menu-open) { overflow: hidden; }
   .verix-landing .feature-row { padding: 38px 0; gap: 24px; }
   .verix-landing .feat-visual { aspect-ratio: 16/11; }
 
-  .verix-landing .manifesto { padding: clamp(80px,14vh,140px) var(--pad); }
-  .verix-landing .illuminate { max-width: 100%; }
-  .verix-landing .manifesto-foot { gap: 28px; margin-top: 44px; }
+  /* thesis spacing handled in the dedicated @media (max-width:880px) block above */
 
   /* phone: keep the sticky stacking (same as desktop) — just tighter spacing.
      Do NOT set position:static here or the stack flattens. */
