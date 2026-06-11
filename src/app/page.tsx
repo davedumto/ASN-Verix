@@ -420,6 +420,11 @@ export default function Home() {
     const scrubCanvas = $<HTMLCanvasElement>("[data-scrub-canvas]");
     const scrubFrames: HTMLImageElement[] = [];
     let lastFrameDrawn = -1;
+    // Buttery scrub (Apple-style): smooth the SCROLL VALUE (lerp toward
+    // window.scrollY), then map the frame index 1:1 off that smoothed value.
+    // The frame index is NEVER eased — that adds lag. Smoothing the input +
+    // dense frames (150) gives continuous, momentum-like motion.
+    let smoothScroll = window.scrollY;
     const scrubCtx = scrubCanvas?.getContext("2d") ?? null;
     if (scrubSection && scrubCanvas && scrubCtx) {
       const total = parseInt(scrubSection.dataset.frames ?? "92", 10);
@@ -450,13 +455,15 @@ export default function Home() {
       };
       sizeCanvas();
       on(window, "resize", (() => { sizeCanvas(); if (lastFrameDrawn >= 0) { const i = lastFrameDrawn; lastFrameDrawn = -1; drawFrame(i); } }) as EventListener);
-      // preload frames; draw the first one as soon as it lands. window.Image is
-      // the DOM constructor (the module-scope `Image` is next/image's component).
-      for (let i = 1; i <= total; i++) {
+      // preload frames (zero-indexed frame_000..frame_{total-1}). Decode each
+      // ahead of time so the draw is synchronous (no decode-on-draw jank).
+      // window.Image is the DOM ctor (module-scope `Image` is next/image's).
+      for (let i = 0; i < total; i++) {
         const img = new window.Image();
         const n = String(i).padStart(3, "0");
         img.src = `/sphere/frame_${n}.jpg`;
-        if (i === 1) img.onload = () => drawFrame(0);
+        img.decode?.().catch(() => {});
+        if (i === 0) img.onload = () => drawFrame(0);
         scrubFrames.push(img);
       }
       // ── travelling text mover ─────────────────────────────────────────────
@@ -508,14 +515,23 @@ export default function Home() {
 
       // expose the updater to scrollEngine via a closure-scoped fn
       (scrubSection as HTMLElement & { __drawScrub?: () => void }).__drawScrub = () => {
-        const r = scrubSection.getBoundingClientRect();
-        const vh = window.innerHeight || document.documentElement.clientHeight;
-        const travel = r.height - vh;
-        const p = travel > 0 ? clamp(-r.top / travel, 0, 1) : 0;
+        // Smooth the SCROLL VALUE (not the frame). lerp 0.16 = barely-there ease
+        // that reads as momentum; the page itself scrolls natively (no hijack).
+        const sy = window.scrollY;
+        smoothScroll += (sy - smoothScroll) * 0.16;
+        if (Math.abs(sy - smoothScroll) < 0.4) smoothScroll = sy;
 
-        // draw the matching video frame (paced through the 3 zones)
+        // section geometry from the smoothed scroll value (doc-absolute top).
+        const vh = window.innerHeight || document.documentElement.clientHeight;
+        const r = scrubSection.getBoundingClientRect();
+        const sectionTop = r.top + sy;          // doc-absolute top (raw scroll)
+        const travel = r.height - vh;
+        // progress along the pin, derived from the SMOOTHED scroll position
+        const p = travel > 0 ? clamp((smoothScroll - sectionTop) / travel, 0, 1) : 0;
+
+        // map frame index 1:1 off the smoothed progress (paced through holds)
         const fp = frameProgress(p);
-        const idx = Math.min(total - 1, Math.round(fp * (total - 1)));
+        const idx = Math.min(total - 1, Math.max(0, Math.round(fp * (total - 1))));
         if (idx !== lastFrameDrawn) drawFrame(idx);
 
         // ── ONE text element physically travelling the corner path ──────────
@@ -798,7 +814,7 @@ export default function Home() {
       </section>
 
       {/* ============ THESIS — "Specimen": the vault, examined ============ */}
-      <section className="thesis" id="manifesto" data-scrub-section data-frames="96">
+      <section className="thesis" id="manifesto" data-scrub-section data-frames="150">
         <div className="thesis-track">
           <div className="thesis-stage">
             {/* full-bleed scrubbed video */}
