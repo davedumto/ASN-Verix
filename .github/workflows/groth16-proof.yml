@@ -6,6 +6,9 @@ name: groth16-proof
 
 on:
   workflow_dispatch:        # run manually from the Actions tab or `gh workflow run`
+  push:
+    branches: [veil/rename-and-phase1-spike]   # auto-run on push to the spike branch
+    paths: ['zk/**', '.github/workflows/groth16-proof.yml']
 
 jobs:
   prove:
