@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 risc0-zkvm = { version = "^3.0.5", default-features = false, features = ['std'] }
+sha2 = "0.10"   # SHA-256 commitment C = sha256(Y_le || salt); matches the contract's env.crypto().sha256()

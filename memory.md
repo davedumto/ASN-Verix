@@ -36,8 +36,11 @@ These are settled. Do not re-litigate without explicit approval. If new informat
 2. **Verifier: fork Nethermind's `stellar-risc0-verifier`.** Do not write a Groth16 verifier from scratch. Keep the fork close to upstream.
 3. **Privacy target: the model weights.** W is a private input to the guest. The input X may be public. The journal exposes only X or its hash, the commitment C, and the image ID. Y and W never appear in the journal.
 4. **Commitment scheme:** C = Hash(Y, salt). Reveal checks `Hash(Y, salt)` equals stored C.
+   - **AMENDED 2026-06-15 (approved):** Hash = **SHA-256**, NOT Poseidon. Reason: Poseidon is NOT exposed by the Soroban SDK (25.1.0/26.1.0 expose only sha256, keccak256, ed25519, secp256k1, secp256r1, bls12_381, bn254 — verified against docs.rs). NFR-8 named Poseidon for "ZK-friendly + identical hash on both sides," but the load-bearing requirement is *identical hash in guest and contract*. SHA-256 is native on BOTH (guest: `sha2` crate; contract: `env.crypto().sha256()`), so `sha256(Y_le_bytes || salt)` matches provably. Not ZK-friendly, but the model is tiny (NFR-7) so guest cycles are negligible. This is a deliberate, recorded deviation from NFR-8's letter that honors its intent.
+   - **Commitment preimage layout (MUST match guest + contract + reveal):** `C = sha256( Y as i128 little-endian (16 bytes) || salt (32 bytes) )` = 48-byte preimage.
 5. **Outcome source: owner-set for v1.** No real oracle. Reflector is a post-hackathon stretch only.
 6. **Model: trivially small.** Linear or fixed-weight function. Sophistication is out of scope.
+   - **CHOSEN 2026-06-15 (approved):** one-feature linear predictor **`Y = w0 + w1 * X`**. X = public integer market input (e.g. price in cents). W = (w0, w1) private weights. Y = integer (NFR-9). Computed with checked i128 arithmetic in the guest.
 7. **Scope, one clean loop:** commit, verify, reveal, score, leaderboard. Single numeric prediction type.
 8. **Testnet only.** Never mainnet. No secrets in the repo.
 9. **Spike before product.** Phase 1 must be green before any Phase 2 work.

@@ -54,5 +54,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: groth16-proof
-          path: zk/proof.txt
+          path: |
+            zk/proof.txt
+            zk/commit.txt
           if-no-files-found: error
