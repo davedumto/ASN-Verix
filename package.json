@@ -1,7 +1,7 @@
 {
-  "name": "verix",
+  "name": "veil",
   "version": "0.1.0",
-  "description": "Verifiable Autonomous Work Infrastructure on Stellar/Soroban",
+  "description": "Provably honest AI predictions, anchored on Stellar — ZK-proven forecasts verified inside a Soroban contract.",
   "private": true,
   "scripts": {
     "dev": "next dev",
